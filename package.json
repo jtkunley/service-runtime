@@ -1,0 +1,66 @@
+{
+    "name": "service-runtime",
+    "version": "1.0.0",
+    "type": "commonjs",
+    "scripts": {
+        "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/prepare-dist.mjs",
+        "typecheck": "tsc",
+        "lint": "eslint .",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "check": "npm run typecheck && npm run lint && npm test"
+    },
+    "engines": {
+        "node": ">=22"
+    },
+    "main": "./src/index.js",
+    "types": "./src/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./src/index.d.ts",
+            "default": "./src/index.js"
+        },
+        "./cron": {
+            "types": "./src/lib/cron/cron.d.ts",
+            "default": "./src/lib/cron/cron.js"
+        },
+        "./tier": {
+            "types": "./src/lib/tier/tier.d.ts",
+            "default": "./src/lib/tier/tier.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "typesVersions": {
+        "*": {
+            "cron": [
+                "./src/lib/cron/cron.d.ts"
+            ],
+            "tier": [
+                "./src/lib/tier/tier.d.ts"
+            ]
+        }
+    },
+    "files": [
+        "src",
+        "README.md",
+        "CHANGELOG.md"
+    ],
+    "license": "UNLICENSED",
+    "dependencies": {
+        "node-cron": "^3.0.3"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@types/express": "^5.0.6",
+        "@types/node": "^26.6.6",
+        "@types/node-cron": "^3.0.11",
+        "@vitest/coverage-v8": "^5.0.5",
+        "eslint": "^10.13.0",
+        "express": "^5.3.0",
+        "globals": "^17.13.0",
+        "typescript": "~6.0.3",
+        "typescript-eslint": "^8.72.1",
+        "vitest": "^5.0.5"
+    }
+}
