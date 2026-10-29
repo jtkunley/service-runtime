@@ -12,7 +12,7 @@ export interface LogLine {
 }
 
 export interface FixtureEnv {
-    DEFAULT_ORG_ID?: string;
+    DEFAULT_TENANT_ID?: string;
     CRON_RUN_MS?: string;
     FAIL_CLEANUP?: string;
     FORCE_EXIT_MS?: string;

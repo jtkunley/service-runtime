@@ -2,7 +2,7 @@ import { connect } from 'net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startService, stopServices } from './service';
 
-const BOTH_IDS = { 'x-org-id': 'org-1', 'x-request-id': 'req-1' };
+const BOTH_IDS = { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1' };
 /** The service sweeps idle connections every second; the client keeps them open for 4. */
 const IDLE_SWEEP_BOUND_MS = 2_000;
 
@@ -31,7 +31,7 @@ describe('graceful shutdown of a running service', () => {
         await service.waitForLog('Received shutdown signal, closing server...');
 
         expect((await fetch(`${service.url}/ready`)).status).toBe(503);
-        expect(await (await inFlight).json()).toEqual({ orgId: 'org-1', requestId: 'req-1' });
+        expect(await (await inFlight).json()).toEqual({ tenantId: 'tenant-1', requestId: 'req-1' });
         expect(await connectionRefused(service.url)).toBe(true);
         expect(await service.exited).toBe(0);
         expect(service.messages()).toEqual(

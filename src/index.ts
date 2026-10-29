@@ -9,8 +9,15 @@ export {
 export { createShutdownState, type ShutdownState } from './lib/lifecycle/shutdownState';
 export { registerFatalHandlers } from './lib/lifecycle/fatalHandlers';
 
-export { run, getOrgId, getRequestId, getStore, type RequestContext } from './lib/context/store';
-export { ORG_ID_HEADER, REQUEST_ID_HEADER } from './lib/context/headers';
+export {
+    configureContext,
+    type Context,
+    type ContextConfig,
+    type ContextEntry,
+    type ContextRequest,
+    type ContextSource,
+    type ContextValues,
+} from './lib/context/configureContext';
 export type { ContextMiddlewareOptions } from './lib/context/resolveContext';
 export { createExpressMiddleware } from './lib/context/express';
 export { createKoaMiddleware } from './lib/context/koa';

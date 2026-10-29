@@ -1,10 +1,15 @@
+import { randomUUID } from 'crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createExpressMiddleware } from '../express';
-import { getStore } from '../store';
-import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
+import { configureContext } from '../configureContext';
+
+const context = configureContext({
+    tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },
+    requestId: { value: (req) => req.headers['x-request-id'] ?? randomUUID() },
+});
 
 const servers: Server[] = [];
 
@@ -30,12 +35,12 @@ afterEach(async () => {
 });
 
 const echoContext: express.RequestHandler = (_req, res) => {
-    res.json(getStore() ?? null);
+    res.json(context.getStore() ?? null);
 };
 
-async function echoApp(opts?: Parameters<typeof createExpressMiddleware>[0]) {
+async function echoApp(opts?: Parameters<typeof createExpressMiddleware>[1]) {
     const app = express();
-    app.use(createExpressMiddleware(opts));
+    app.use(createExpressMiddleware(context, opts));
     app.get('/context', echoContext);
     return serve(app);
 }
@@ -45,20 +50,20 @@ describe('createExpressMiddleware in a real Express app', () => {
         const url = await echoApp();
 
         const res = await fetch(`${url}/context`, {
-            headers: { 'X-Org-Id': 'org-1', 'X-Request-Id': 'req-1' },
+            headers: { 'X-Tenant-Id': 'tenant-1', 'X-Request-Id': 'req-1' },
         });
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ orgId: 'org-1', requestId: 'req-1' });
+        expect(await res.json()).toEqual({ tenantId: 'tenant-1', requestId: 'req-1' });
     });
 
     it('generates a request ID when the request has none', async () => {
         const url = await echoApp();
 
-        const res = await fetch(`${url}/context`, { headers: { [ORG_ID_HEADER]: 'org-1' } });
+        const res = await fetch(`${url}/context`, { headers: { 'x-tenant-id': 'tenant-1' } });
 
         expect(await res.json()).toEqual({
-            orgId: 'org-1',
+            tenantId: 'tenant-1',
             requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
         });
     });
@@ -67,49 +72,51 @@ describe('createExpressMiddleware in a real Express app', () => {
         const router = express.Router();
         router.post('/orders', async (req, res) => {
             await new Promise((resolve) => setTimeout(resolve, 5));
-            res.json({ body: req.body as unknown, orgId: getStore()?.orgId });
+            res.json({ body: req.body as unknown, tenantId: context.getStore()?.tenantId });
         });
         const app = express();
-        app.use(createExpressMiddleware());
+        app.use(createExpressMiddleware(context));
         app.use(express.json());
         app.use('/api', router);
         const url = await serve(app);
 
         const res = await fetch(`${url}/api/orders`, {
             method: 'POST',
-            headers: { [ORG_ID_HEADER]: 'org-1', 'content-type': 'application/json' },
+            headers: { 'x-tenant-id': 'tenant-1', 'content-type': 'application/json' },
             body: JSON.stringify({ item: 'book' }),
         });
 
-        expect(await res.json()).toEqual({ body: { item: 'book' }, orgId: 'org-1' });
+        expect(await res.json()).toEqual({ body: { item: 'book' }, tenantId: 'tenant-1' });
     });
 
     it('keeps concurrent requests apart', async () => {
         const app = express();
-        app.use(createExpressMiddleware());
+        app.use(createExpressMiddleware(context));
         app.get('/context', async (_req, res) => {
             await new Promise((resolve) => setTimeout(resolve, Math.random() * 10));
-            res.json(getStore() ?? null);
+            res.json(context.getStore() ?? null);
         });
         const url = await serve(app);
-        const orgIds = Array.from({ length: 20 }, (_, i) => `org-${i}`);
+        const tenantIds = Array.from({ length: 20 }, (_, i) => `tenant-${i}`);
 
         const seen = await Promise.all(
-            orgIds.map(async (orgId) => {
+            tenantIds.map(async (tenantId) => {
                 const res = await fetch(`${url}/context`, {
-                    headers: { [ORG_ID_HEADER]: orgId, [REQUEST_ID_HEADER]: `req-${orgId}` },
+                    headers: { 'x-tenant-id': tenantId, 'x-request-id': `req-${tenantId}` },
                 });
                 return res.json();
             }),
         );
 
-        expect(seen).toEqual(orgIds.map((orgId) => ({ orgId, requestId: `req-${orgId}` })));
+        expect(seen).toEqual(
+            tenantIds.map((tenantId) => ({ tenantId, requestId: `req-${tenantId}` })),
+        );
     });
 
-    it('answers 400 with the error as JSON, never reaching the route, when the org ID is missing', async () => {
+    it('answers 400 with the error as JSON, never reaching the route, when the tenant ID is missing', async () => {
         const route = vi.fn(echoContext);
         const app = express();
-        app.use(createExpressMiddleware());
+        app.use(createExpressMiddleware(context));
         app.get('/context', route);
         const url = await serve(app);
 
@@ -117,14 +124,14 @@ describe('createExpressMiddleware in a real Express app', () => {
 
         expect(res.status).toBe(400);
         expect(res.headers.get('content-type')).toMatch(/^application\/json/);
-        expect(await res.json()).toEqual({ error: 'Missing required header: x-org-id' });
+        expect(await res.json()).toEqual({ error: 'Missing required context value: tenantId' });
         expect(route).not.toHaveBeenCalled();
     });
 
     it('logs the full path when mounted on a router', async () => {
         const logger = { warn: vi.fn(), error: vi.fn() };
         const router = express.Router();
-        router.use(createExpressMiddleware({ logger }));
+        router.use(createExpressMiddleware(context, { logger }));
         const app = express();
         app.use('/api', router);
         const url = await serve(app);
@@ -136,13 +143,5 @@ describe('createExpressMiddleware in a real Express app', () => {
             expect.any(Error),
             expect.objectContaining({ method: 'POST', path: '/api/orders' }),
         );
-    });
-
-    it('runs under the default org in single-tenant mode, whatever the request says', async () => {
-        const url = await echoApp({ getDefaultOrgId: () => 'default-org' });
-
-        const res = await fetch(`${url}/context`, { headers: { [ORG_ID_HEADER]: 'other-org' } });
-
-        expect(await res.json()).toMatchObject({ orgId: 'default-org' });
     });
 });

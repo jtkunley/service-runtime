@@ -50,10 +50,10 @@ interface Resolution {
 }
 
 interface ContextInternals {
-    config: ContextConfig;
-    resolve(request: ContextRequest): Resolution;
-    enter<T>(values: Values, fn: () => T): T;
-    logData(values: Values): Record<string, string>;
+    readonly config: ContextConfig;
+    readonly resolve: (request: ContextRequest) => Resolution;
+    readonly enter: <T>(values: Values, fn: () => T) => T;
+    readonly logData: (values: Values) => Record<string, string>;
 }
 
 const internals = new WeakMap<object, ContextInternals>();

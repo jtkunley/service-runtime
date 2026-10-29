@@ -1,6 +1,6 @@
 import type { IncomingHttpHeaders } from 'http';
+import type { Context, ContextConfig } from './configureContext';
 import { resolveContext, type ContextMiddlewareOptions } from './resolveContext';
-import { run } from './store';
 
 interface Req {
     headers: IncomingHttpHeaders;
@@ -11,14 +11,17 @@ interface Res {
     status(code: number): { json(body: unknown): void };
 }
 
-export function createExpressMiddleware(opts: ContextMiddlewareOptions = {}) {
+export function createExpressMiddleware<C extends ContextConfig>(
+    context: Context<C>,
+    opts: ContextMiddlewareOptions = {},
+) {
     return (req: Req, res: Res, next: () => void): void => {
         const { headers, method, originalUrl: path } = req;
-        const result = resolveContext({ headers, method, path }, opts);
+        const result = resolveContext(context, { headers, method, path }, opts);
         if ('error' in result) {
             res.status(400).json(result);
             return;
         }
-        run(result, next);
+        result.enter(next);
     };
 }

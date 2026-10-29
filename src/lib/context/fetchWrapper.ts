@@ -1,30 +1,36 @@
-import { getStore } from './store';
-import { ORG_ID_HEADER, REQUEST_ID_HEADER } from './headers';
+import { contextInternals, type Context, type ContextConfig } from './configureContext';
 
 export interface FetchWrapperOptions {
-    orgId?: boolean;
-    requestId?: boolean;
+    /** `'external'` forwards only entries marked `to: 'all'`, for third-party APIs. Default `'internal'`. */
+    destination?: 'internal' | 'external';
 }
 
-export function createFetchWrapper(options: FetchWrapperOptions = {}): typeof fetch {
-    const { orgId = true, requestId = true } = options;
+export function createFetchWrapper<C extends ContextConfig>(
+    context: Context<C>,
+    { destination = 'internal' }: FetchWrapperOptions = {},
+): typeof fetch {
+    const forwarded = Object.entries(contextInternals(context).config).flatMap(
+        ([name, { forward }]) =>
+            forward && (destination === 'internal' || forward.to === 'all')
+                ? [{ name, header: forward.header }]
+                : [],
+    );
 
     return (input, init) => {
-        const store = getStore();
-        if (!store || (!orgId && !requestId)) {
+        const values = context.getStore() as
+            Readonly<Record<string, string | undefined>> | undefined;
+        if (!values || forwarded.length === 0) {
             return globalThis.fetch(input, init);
         }
 
-        const existing = new Headers(
+        const headers = new Headers(
             init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
-        if (orgId) {
-            existing.set(ORG_ID_HEADER, store.orgId);
-        }
-        if (requestId) {
-            existing.set(REQUEST_ID_HEADER, store.requestId);
+        for (const { name, header } of forwarded) {
+            const value = values[name];
+            if (value !== undefined) headers.set(header, value);
         }
 
-        return globalThis.fetch(input, { ...init, headers: existing });
+        return globalThis.fetch(input, { ...init, headers });
     };
 }

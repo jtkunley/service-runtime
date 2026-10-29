@@ -1,11 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import {
+    configureContext,
     createExpressMiddleware,
     createFetchWrapper,
     createShutdownState,
-    getStore,
     registerFatalHandlers,
     setupGracefulShutdown,
     type CleanupFn,
@@ -15,7 +16,7 @@ import { createCron } from '@jtkunley/service-runtime/cron';
 import { getTier, isNonProdTier, isProdTier } from '@jtkunley/service-runtime/tier';
 
 const env = process.env;
-const defaultOrgId = env['DEFAULT_ORG_ID'];
+const defaultTenantId = env['DEFAULT_TENANT_ID'];
 const cronRunMs = env['CRON_RUN_MS'];
 const forceExitMs = env['FORCE_EXIT_MS'];
 
@@ -35,9 +36,25 @@ const rootLogger: RootLogger = {
 
 registerFatalHandlers(rootLogger);
 
+const context = configureContext({
+    // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
+    tenantId: {
+        value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
+        required: true,
+        forward: { header: 'x-tenant-id', to: 'internal' },
+        log: true,
+    },
+    // Request threading: one ID across every service a request touches, so its logs join up.
+    requestId: {
+        value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
+        forward: { header: 'x-request-id', to: 'all' },
+        log: true,
+    },
+});
+
 const log = rootLogger.child('fixture', 'service');
 const state = createShutdownState();
-const wrappedFetch = createFetchWrapper();
+const wrappedFetch = createFetchWrapper(context);
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const app = express();
@@ -50,27 +67,22 @@ app.get('/health', (_req, res) => {
     res.json({ tier: tier ?? null, nonProd: isNonProdTier(tier), prod: isProdTier(tier) });
 });
 
-app.use(
-    createExpressMiddleware({
-        logger: rootLogger.child('server', 'context'),
-        getDefaultOrgId: defaultOrgId ? () => defaultOrgId : undefined,
-    }),
-);
+app.use(createExpressMiddleware(context, { logger: rootLogger.child('server', 'context') }));
 
 app.get('/context', (_req, res) => {
-    res.json(getStore());
+    res.json(context.getStore());
 });
 app.get('/headers', (req, res) => {
-    res.json({ orgId: req.get('x-org-id'), requestId: req.get('x-request-id') });
+    res.json({ tenantId: req.get('x-tenant-id'), requestId: req.get('x-request-id') });
 });
 app.get('/call', async (req, res) => {
     const downstream = await wrappedFetch(req.query['url'] as string);
-    res.json({ context: getStore(), downstream: await downstream.json() });
+    res.json({ context: context.getStore(), downstream: await downstream.json() });
 });
 app.get('/slow', async (req, res) => {
-    log.info('Slow request started', {});
+    log.info('Slow request started', context.getLogData());
     await sleep(Number(req.query['ms']));
-    res.json(getStore());
+    res.json(context.getStore());
 });
 app.get('/hang', () => {
     log.info('Hanging request started', {});

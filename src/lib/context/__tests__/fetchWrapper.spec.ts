@@ -1,10 +1,30 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createFetchWrapper } from '../fetchWrapper';
-import { run } from '../store';
-import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { configureContext } from '../configureContext';
+import { createFetchWrapper, type FetchWrapperOptions } from '../fetchWrapper';
 
 const URL_ = 'https://example.com/api';
-const CTX = { orgId: 'ctx-org', requestId: 'ctx-corr' };
+
+const context = configureContext({
+    tenantId: {
+        value: (req) => req.headers['x-tenant-id'],
+        forward: { header: 'x-tenant-id', to: 'internal' },
+    },
+    requestId: {
+        value: (req) => req.headers['x-request-id'],
+        forward: { header: 'x-request-id', to: 'all' },
+    },
+    traceId: {
+        value: (req) => req.headers['x-trace-id'],
+        forward: { header: 'x-trace-id', to: 'all' },
+    },
+    userId: { value: (req) => req.headers['x-user-id'] },
+});
+
+const inContext = <T>(fn: () => T): T =>
+    context.run(
+        { headers: { 'x-tenant-id': 'ctx-tenant', 'x-request-id': 'ctx-req', 'x-user-id': 'u-1' } },
+        fn,
+    );
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -22,7 +42,7 @@ const sentRequest = (): Request => {
 
 describe('createFetchWrapper', () => {
     it('returns the response from the global fetch, looked up at call time', async () => {
-        const fetchWrapper = createFetchWrapper();
+        const fetchWrapper = createFetchWrapper(context);
         const response = new Response('later');
         const laterFetch = vi.fn().mockResolvedValue(response);
         vi.stubGlobal('fetch', laterFetch);
@@ -34,59 +54,61 @@ describe('createFetchWrapper', () => {
     it('passes the call through untouched outside a request context', async () => {
         const init = { headers: { 'x-custom': 'value' } };
 
-        await createFetchWrapper()(URL_, init);
+        await createFetchWrapper(context)(URL_, init);
 
         expect(fetchMock).toHaveBeenCalledWith(URL_, init);
     });
 
-    it('passes the call through untouched when both headers are turned off', async () => {
-        const fetchWrapper = createFetchWrapper({
-            orgId: false,
-            requestId: false,
-        });
+    it('passes the call through untouched when no entry is forwarded', async () => {
+        const unforwarded = configureContext({ userId: { value: () => 'u-1' } });
         const init = { headers: { 'x-custom': 'value' } };
 
-        await run(CTX, () => fetchWrapper(URL_, init));
+        await unforwarded.run({ headers: {} }, () => createFetchWrapper(unforwarded)(URL_, init));
 
         expect(fetchMock).toHaveBeenCalledWith(URL_, init);
     });
 
-    it('replaces caller-provided context headers with the context values', async () => {
-        await run(CTX, () =>
-            createFetchWrapper()(URL_, {
-                headers: {
-                    [ORG_ID_HEADER]: 'caller-org',
-                    [REQUEST_ID_HEADER]: 'caller-corr',
-                },
+    it('skips a forwarded entry without a value, and never sends one not marked forward', async () => {
+        await inContext(() => createFetchWrapper(context)(URL_));
+
+        const { headers } = sentRequest();
+        expect(headers.has('x-trace-id')).toBe(false);
+        expect([...headers.values()]).not.toContain('u-1');
+    });
+
+    it('replaces caller-provided forwarded headers with the context values', async () => {
+        await inContext(() =>
+            createFetchWrapper(context)(URL_, {
+                headers: { 'x-tenant-id': 'caller-tenant', 'x-request-id': 'caller-req' },
             }),
         );
 
-        expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe('ctx-org');
-        expect(sentRequest().headers.get(REQUEST_ID_HEADER)).toBe('ctx-corr');
+        expect(sentRequest().headers.get('x-tenant-id')).toBe('ctx-tenant');
+        expect(sentRequest().headers.get('x-request-id')).toBe('ctx-req');
     });
 
     it('never changes the headers the caller passed in', async () => {
         const headers = new Headers({ 'x-custom': 'value' });
 
-        await run(CTX, () => createFetchWrapper()(URL_, { headers }));
+        await inContext(() => createFetchWrapper(context)(URL_, { headers }));
 
         expect([...headers.keys()]).toEqual(['x-custom']);
     });
 
     it('keeps a Request input’s method and body', async () => {
-        await run(CTX, () =>
-            createFetchWrapper()(new Request(URL_, { method: 'POST', body: 'payload' })),
+        await inContext(() =>
+            createFetchWrapper(context)(new Request(URL_, { method: 'POST', body: 'payload' })),
         );
 
         const request = sentRequest();
         expect(request.method).toBe('POST');
         expect(await request.text()).toBe('payload');
-        expect(request.headers.get(ORG_ID_HEADER)).toBe('ctx-org');
+        expect(request.headers.get('x-tenant-id')).toBe('ctx-tenant');
     });
 
     it('lets init.headers win over a Request input’s headers, like fetch itself', async () => {
-        await run(CTX, () =>
-            createFetchWrapper()(new Request(URL_, { headers: { 'x-from': 'request' } }), {
+        await inContext(() =>
+            createFetchWrapper(context)(new Request(URL_, { headers: { 'x-from': 'request' } }), {
                 headers: { 'x-from': 'init' },
             }),
         );
@@ -94,21 +116,10 @@ describe('createFetchWrapper', () => {
         expect(sentRequest().headers.get('x-from')).toBe('init');
     });
 
-    describe.each([
-        { name: 'by default', options: {}, org: 'ctx-org', corr: 'ctx-corr' },
-        {
-            name: 'with orgId off',
-            options: { orgId: false },
-            org: null,
-            corr: 'ctx-corr',
-        },
-        {
-            name: 'with requestId off',
-            options: { requestId: false },
-            org: 'ctx-org',
-            corr: null,
-        },
-    ])('$name', ({ options, org, corr }) => {
+    describe.each<{ name: string; options: FetchWrapperOptions; tenant: string | null }>([
+        { name: 'to an internal destination, the default', options: {}, tenant: 'ctx-tenant' },
+        { name: 'to an external destination', options: { destination: 'external' }, tenant: null },
+    ])('$name', ({ options, tenant }) => {
         const sources: [string, () => [string | URL | Request, RequestInit?]][] = [
             ['no init', () => [URL_]],
             ['an init.headers object', () => [URL_, { headers: { authorization: 'Bearer t' } }]],
@@ -129,29 +140,31 @@ describe('createFetchWrapper', () => {
         ];
 
         it.each(sources)(
-            'sends the context headers and keeps the caller’s, given %s',
+            'sends the entries forwarded there and keeps the caller’s headers, given %s',
             async (source, args) => {
-                await run(CTX, () => createFetchWrapper(options)(...args()));
+                await inContext(() => createFetchWrapper(context, options)(...args()));
 
                 const { headers } = sentRequest();
-                expect(headers.get(ORG_ID_HEADER)).toBe(org);
-                expect(headers.get(REQUEST_ID_HEADER)).toBe(corr);
+                expect(headers.get('x-tenant-id')).toBe(tenant);
+                expect(headers.get('x-request-id')).toBe('ctx-req');
                 expect(headers.get('authorization')).toBe(source === 'no init' ? null : 'Bearer t');
             },
         );
     });
 
-    const callerOrgSources: [string, () => [string | URL | Request, RequestInit?]][] = [
-        ['an init.headers object', () => [URL_, { headers: { [ORG_ID_HEADER]: 'caller-org' } }]],
-        ['a Request', () => [new Request(URL_, { headers: { [ORG_ID_HEADER]: 'caller-org' } })]],
+    const callerTenantSources: [string, () => [string | URL | Request, RequestInit?]][] = [
+        ['an init.headers object', () => [URL_, { headers: { 'x-tenant-id': 'caller-tenant' } }]],
+        ['a Request', () => [new Request(URL_, { headers: { 'x-tenant-id': 'caller-tenant' } })]],
     ];
 
-    it.each(callerOrgSources)(
-        'leaves a caller’s own org ID header alone when orgId is off, given %s',
+    it.each(callerTenantSources)(
+        'leaves a caller’s own header alone when its entry is not forwarded there, given %s',
         async (_source, args) => {
-            await run(CTX, () => createFetchWrapper({ orgId: false })(...args()));
+            await inContext(() =>
+                createFetchWrapper(context, { destination: 'external' })(...args()),
+            );
 
-            expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe('caller-org');
+            expect(sentRequest().headers.get('x-tenant-id')).toBe('caller-tenant');
         },
     );
 });

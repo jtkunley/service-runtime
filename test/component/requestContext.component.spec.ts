@@ -1,43 +1,55 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { startService, stopServices } from './service';
 
-const BOTH_IDS = { 'x-org-id': 'org-1', 'x-request-id': 'req-1' };
+const BOTH_IDS = { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1' };
 
 describe('request context in a running service', () => {
     afterEach(stopServices);
 
-    it('hands each route the org ID and request ID from the request headers', async () => {
+    it('hands each route the tenant ID and request ID from the request headers', async () => {
         const service = await startService();
 
         const res = await fetch(`${service.url}/context`, { headers: BOTH_IDS });
 
-        expect(await res.json()).toEqual({ orgId: 'org-1', requestId: 'req-1' });
+        expect(await res.json()).toEqual({ tenantId: 'tenant-1', requestId: 'req-1' });
     });
 
-    it('rejects a request without an org ID with a 400, logging the reason', async () => {
+    it('rejects a request without a tenant ID with a 400, logging the reason', async () => {
         const service = await startService();
 
         const res = await fetch(`${service.url}/context`);
 
         expect(res.status).toBe(400);
-        expect(await res.json()).toEqual({ error: 'Missing required header: x-org-id' });
-        expect(await service.waitForLog('Missing required header: x-org-id')).toMatchObject({
+        expect(await res.json()).toEqual({ error: 'Missing required context value: tenantId' });
+        expect(await service.waitForLog('Missing required context value: tenantId')).toMatchObject({
             level: 'error',
             module: 'server',
             action: 'context',
             method: 'GET',
             path: '/context',
+            missing: ['tenantId'],
         });
     });
 
-    it('runs under the default org in single-tenant mode, whatever the request says', async () => {
-        const service = await startService({ DEFAULT_ORG_ID: 'default-org' });
+    it('lets the app add the values marked log to its own log lines', async () => {
+        const service = await startService();
+
+        await fetch(`${service.url}/slow?ms=1`, { headers: BOTH_IDS });
+
+        expect(await service.waitForLog('Slow request started')).toMatchObject({
+            tenantId: 'tenant-1',
+            requestId: 'req-1',
+        });
+    });
+
+    it('runs under the default tenant in single-tenant mode, whatever the request says', async () => {
+        const service = await startService({ DEFAULT_TENANT_ID: 'default-tenant' });
 
         const res = await fetch(`${service.url}/context`, {
-            headers: { 'x-org-id': 'other-org' },
+            headers: { 'x-tenant-id': 'other-tenant' },
         });
 
-        expect(await res.json()).toMatchObject({ orgId: 'default-org' });
+        expect(await res.json()).toMatchObject({ tenantId: 'default-tenant' });
     });
 
     it('threads both IDs on to the next service', async () => {
@@ -48,7 +60,7 @@ describe('request context in a running service', () => {
         });
 
         expect(await res.json()).toMatchObject({
-            downstream: { orgId: 'org-1', requestId: 'req-1' },
+            downstream: { tenantId: 'tenant-1', requestId: 'req-1' },
         });
     });
 
@@ -56,7 +68,7 @@ describe('request context in a running service', () => {
         const [upstream, downstream] = await Promise.all([startService(), startService()]);
 
         const res = await fetch(`${upstream.url}/call?url=${downstream.url}/headers`, {
-            headers: { 'x-org-id': 'org-1' },
+            headers: { 'x-tenant-id': 'tenant-1' },
         });
 
         const { context, downstream: received } = (await res.json()) as {

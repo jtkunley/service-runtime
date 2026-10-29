@@ -22,7 +22,7 @@ describe('fatal error handling in a running service', () => {
         async (_name, path, message, error) => {
             const service = await startService();
 
-            await fetch(`${service.url}${path}`, { headers: { 'x-org-id': 'org-1' } });
+            await fetch(`${service.url}${path}`, { headers: { 'x-tenant-id': 'tenant-1' } });
 
             expect(await service.exited).toBe(1);
             expect(await service.waitForLog(message)).toMatchObject({
