@@ -48,31 +48,12 @@ Requires Node.js 22 or later. Bring your own logger: anything that implements th
 
 ## Quick start
 
-A service wired end to end. The component tests run a service much like this one, in [`test/component/fixtures/service.mts`](test/component/fixtures/service.mts).
-
 ```ts
 // service.ts
-import { randomUUID } from 'node:crypto';
 import { configureService } from '@jtkunley/service-runtime';
 import { rootLogger } from './logger'; // your RootLogger implementation
 
-export const service = configureService({
-  logger: rootLogger,
-  context: {
-    tenantId: {
-      value: (req) => req.headers['x-tenant-id'],
-      required: true,
-      header: 'x-tenant-id',
-    },
-    requestId: {
-      value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-      header: 'x-request-id',
-    },
-  },
-  destinations: {
-    platform: ['tenantId', 'requestId'],
-  },
-});
+export const service = configureService({ logger: rootLogger });
 ```
 
 ```ts
@@ -81,23 +62,16 @@ import express from 'express';
 import { service } from './service';
 
 const app = express();
-app.use(service.middleware);
-app.get('/orders', async (_req, res) => {
-  const orders = await fetch(`https://orders.internal/tenants/${service.context.get('tenantId')}/orders`, {
-    headers: service.context.getHeaders('platform'),
-  });
-  res.json(await orders.json());
-});
+app.get('/hello', (_req, res) => res.json({ hello: 'world' }));
 
-service.onShutdown(closeDb);
 await service.listen(app, { port: 3000 });
 ```
 
-That's the whole integration: probes on `/readiness` and `/liveness`, the context filled for every request, graceful shutdown on SIGTERM and SIGINT, and an exit on any uncaught error.
+That's a production-ready server: probes on `/readiness` and `/liveness`, graceful shutdown on SIGTERM and SIGINT, and an exit on any uncaught error. Add [request context](#request-context) when requests carry values, such as a tenant or a request ID, and cleanups when the service opens resources. The component tests run a service using all of it, in [`test/component/fixtures/service.mts`](test/component/fixtures/service.mts).
 
 ## Request context
 
-A service declares, once at startup, the values every request carries. Each entry has a `value` function that works it out when a request starts, and attributes that decide what happens to it. The values are held in [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the rest of the request, so any code can read them without passing them through every call. The package knows nothing about what the values mean: tenancy, request IDs, locales and anything else are the service's own declarations.
+A service declares, once at startup, the values every request carries, in `configureService`'s optional `context`. Each entry has a `value` function that works it out when a request starts, and attributes that decide what happens to it. The values are held in [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the rest of the request, so any code can read them without passing them through every call. The package knows nothing about what the values mean: tenancy, request IDs, locales and anything else are the service's own declarations.
 
 ### Declaring the values
 
@@ -184,12 +158,29 @@ service.context.getHeaders('platform'); // { 'x-tenant-id': 'tenant-1', 'x-reque
 service.context.getHeaders('payments'); // { 'x-request-id': 'req-1' }
 ```
 
-The service wires them into whatever sends the request, once. Spread them last, so they replace a header of the same name the caller set:
+The service wires them into whatever sends the request, once, so no call can leave without them. For `fetch`, a wrapper the app uses instead, sending to its usual destination unless told otherwise. The values are set last, replacing a header of the same name the caller set:
 
 ```ts
-// fetch
-await fetch(url, { ...init, headers: { ...init?.headers, ...service.context.getHeaders('platform') } });
+// http.ts
+import { service } from './service';
 
+type Destination = Parameters<typeof service.context.getHeaders>[0];
+
+export function serviceFetch(url: string | URL, init: RequestInit = {}, destination: Destination = 'platform') {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(service.context.getHeaders(destination))) {
+    headers.set(name, value);
+  }
+  return fetch(url, { ...init, headers });
+}
+
+await serviceFetch('https://orders.internal/orders');
+await serviceFetch('https://api.payments.example/charges', { method: 'POST', body: JSON.stringify(charge) }, 'payments');
+```
+
+Other clients:
+
+```ts
 // axios, for every request the instance makes
 platformApi.interceptors.request.use((config) => {
   Object.assign(config.headers, service.context.getHeaders('platform'));
@@ -245,7 +236,7 @@ From the moment `listen` is called, an `uncaughtException` or `unhandledRejectio
 
 ## API
 
-### `configureService({ logger, context, destinations? })`
+### `configureService({ logger, context?, destinations? })`
 
 Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context.
 

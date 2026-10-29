@@ -56,6 +56,17 @@ const service = configureService({
     },
 });
 
+type Destination = Parameters<typeof service.context.getHeaders>[0];
+
+/** Every outgoing call goes through here, so none can leave without the context's headers. */
+function serviceFetch(url: string, init: RequestInit = {}, destination: Destination = 'internal') {
+    const headers = new Headers(init.headers);
+    for (const [name, value] of Object.entries(service.context.getHeaders(destination))) {
+        headers.set(name, value);
+    }
+    return fetch(url, { ...init, headers });
+}
+
 const log = rootLogger.child('fixture', 'service');
 const app = express();
 
@@ -68,10 +79,10 @@ app.get('/headers', (req, res) => {
     res.json({ tenantId: req.get('x-tenant-id'), requestId: req.get('x-request-id') });
 });
 app.get('/call', async (req, res) => {
-    const to = req.query['to'] === 'payments' ? 'payments' : 'internal';
-    const downstream = await fetch(req.query['url'] as string, {
-        headers: service.context.getHeaders(to),
-    });
+    const url = req.query['url'] as string;
+    const downstream = await (req.query['to'] === 'payments'
+        ? serviceFetch(url, {}, 'payments')
+        : serviceFetch(url));
     res.json({ context: service.context.getStore(), downstream: await downstream.json() });
 });
 app.get('/slow', async (req, res) => {

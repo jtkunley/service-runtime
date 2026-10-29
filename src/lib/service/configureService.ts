@@ -25,8 +25,8 @@ import { createShutdownState } from '../shutdown/shutdownState';
 
 export interface ServiceOptions<C extends ContextConfig, D extends Destinations> {
     logger: RootLogger;
-    /** The values every request carries, by name. */
-    context: C & NoUnknownAttributes<C>;
+    /** The values every request carries, by name. None by default. */
+    context?: C & NoUnknownAttributes<C>;
     /** Each destination the service calls, listing the entries whose headers it receives. */
     destinations?: D & ValidDestinations<C, D>;
 }
@@ -88,15 +88,16 @@ let listening = false;
  * service can be tested without it exiting the test process.
  */
 export function configureService<
-    const C extends ContextConfig,
+    const C extends ContextConfig = Record<never, never>,
     const D extends Destinations = Record<never, never>,
 >(options: ServiceOptions<C, D>): Service<C, D> {
     const { logger } = options;
+    const config = options.context ?? ({} as C & NoUnknownAttributes<C>);
 
-    const context = configureContext<C>(options.context);
+    const context = configureContext<C>(config);
     const getHeaders = createGetHeaders(
         context,
-        options.context,
+        config,
         options.destinations ?? ({} as D & ValidDestinations<C, D>),
     );
     const state = createShutdownState();

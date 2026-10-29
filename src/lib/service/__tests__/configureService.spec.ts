@@ -142,6 +142,19 @@ describe('configureService', () => {
             expect(logger.childLogger.error).toHaveBeenCalledOnce();
         });
 
+        it('needs only a logger, carrying no values and letting every request through', () => {
+            const service = configureService({ logger: createMockRootLogger() });
+            const next = vi.fn(() => service.context.getStore());
+
+            service.middleware({ headers: {}, method: 'GET', originalUrl: '/' }, res(), next);
+
+            expect(next).toHaveReturnedWith({});
+            // @ts-expect-error -- no destinations are declared
+            expect(() => service.context.getHeaders('internal')).toThrow('Unknown destination');
+            // @ts-expect-error -- no entries are declared
+            expect(() => service.context.get('tenantId')).toThrow('No request context');
+        });
+
         it('exposes only the context functions apps call, not the ones the middleware uses', () => {
             expect(Object.keys(configure().context)).toEqual([
                 'run',
