@@ -1,4 +1,5 @@
 import { createTask } from 'node-cron';
+import type { Context, ContextConfig, ContextSource } from '../context/configureContext';
 import { toError } from '../shared/errors';
 import type { ChildLogger } from '../shared/logger';
 
@@ -15,6 +16,15 @@ export interface CronOptions {
     allowOverlap?: boolean;
     /** Default true: `stop()` waits for in-flight runs to finish. */
     waitForCompletionOnStop?: boolean;
+
+    /**
+     * Each tick runs inside this context, so the job can read its values and a
+     * failed run is logged with them. Leave it out for a job that sets up its own
+     * contexts, such as one that works through every tenant in turn.
+     */
+    context?: Pick<Context<ContextConfig>, 'run' | 'getLogData'>;
+    /** Where each tick's values come from. Default: no headers, so only the `value` functions decide. */
+    source?: () => ContextSource;
 }
 
 export interface CronController {
@@ -33,6 +43,8 @@ export function createCron(options: CronOptions): CronController {
         onError,
         allowOverlap = false,
         waitForCompletionOnStop = true,
+        context,
+        source = () => ({ headers: {} }),
     } = options;
 
     let started = false;
@@ -47,6 +59,27 @@ export function createCron(options: CronOptions): CronController {
         },
         { name },
     );
+
+    function report(error: unknown): void {
+        logger?.error(`Cron "${name}" run failed`, toError(error), {
+            name,
+            ...context?.getLogData(),
+        });
+        try {
+            onError?.(error);
+        } catch (hookError) {
+            logger?.error(`Cron "${name}" onError hook failed`, toError(hookError), { name });
+        }
+    }
+
+    /** Reports from inside the context, so the failure log carries the tick's values. */
+    async function attempt(): Promise<void> {
+        try {
+            await run();
+        } catch (error) {
+            report(error);
+        }
+    }
 
     async function executeTick(): Promise<void> {
         if (stopRequested) {
@@ -65,16 +98,9 @@ export function createCron(options: CronOptions): CronController {
 
         const runPromise = (async () => {
             try {
-                await run();
+                await (context ? context.run(source(), attempt) : attempt());
             } catch (error) {
-                logger?.error(`Cron "${name}" run failed`, toError(error), { name });
-                try {
-                    onError?.(error);
-                } catch (hookError) {
-                    logger?.error(`Cron "${name}" onError hook failed`, toError(hookError), {
-                        name,
-                    });
-                }
+                report(error);
             } finally {
                 if (!allowOverlap) {
                     singleRunInProgress = false;

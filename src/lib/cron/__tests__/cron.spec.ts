@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { configureContext } from '../../context/configureContext';
 import { createCron, type CronOptions } from '../cron';
 
 const cronMocks = vi.hoisted(() => {
@@ -286,6 +287,74 @@ describe('createCron', () => {
             expect(job.isActive()).toBe(true);
             release();
             await vi.waitFor(() => expect(job.isActive()).toBe(false));
+        });
+    });
+
+    describe('in a context', () => {
+        let ticks = 0;
+        const context = configureContext({
+            tenantId: { value: (req) => req.headers['x-tenant-id'], required: true, log: true },
+            tickId: { value: () => `tick-${++ticks}`, log: true },
+        });
+        const SOURCE = () => ({ headers: { 'x-tenant-id': 'tenant-1' } });
+
+        it('runs each tick inside its own context, its values worked out from the source', async () => {
+            const seen: unknown[] = [];
+            const job = create({
+                context,
+                source: SOURCE,
+                run: () => Promise.resolve(void seen.push(context.getStore())),
+            });
+            job.start();
+
+            cronMocks.tick();
+            await vi.waitFor(() => expect(job.isActive()).toBe(false));
+            cronMocks.tick();
+            await vi.waitFor(() => expect(seen).toHaveLength(2));
+
+            expect(seen[0]).toEqual({ tenantId: 'tenant-1', tickId: expect.any(String) });
+            expect(seen[1]).not.toEqual(seen[0]);
+        });
+
+        it('logs a failed run with the tick’s values marked log', async () => {
+            const logger = makeLogger();
+            const error = new Error('boom');
+
+            create({
+                name: 'ctx',
+                context,
+                source: SOURCE,
+                logger,
+                run: () => Promise.reject(error),
+            }).start();
+            cronMocks.tick();
+
+            await vi.waitFor(() => expect(logger.error).toHaveBeenCalledOnce());
+            expect(logger.error).toHaveBeenCalledWith('Cron "ctx" run failed', error, {
+                name: 'ctx',
+                tenantId: 'tenant-1',
+                tickId: expect.stringMatching(/^tick-/),
+            });
+        });
+
+        it('fails a tick missing a required value without running it, and keeps the schedule', async () => {
+            const logger = makeLogger();
+            const onError = vi.fn();
+            const run = vi.fn().mockResolvedValue(undefined);
+            const job = create({ name: 'no-tenant', context, logger, onError, run });
+            job.start();
+
+            cronMocks.tick();
+            await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());
+            cronMocks.tick();
+            await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(2));
+
+            expect(run).not.toHaveBeenCalled();
+            expect(logger.error).toHaveBeenCalledWith(
+                'Cron "no-tenant" run failed',
+                new Error('Missing required context value: tenantId'),
+                { name: 'no-tenant' },
+            );
         });
     });
 });
