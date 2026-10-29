@@ -49,17 +49,11 @@ Requires Node.js 22 or later. Bring your own logger: anything that implements th
 ## Quick start
 
 ```ts
-// service.ts
+import express from 'express';
 import { configureService } from '@jtkunley/service-runtime';
 import { rootLogger } from './logger'; // your RootLogger implementation
 
-export const service = configureService({ logger: rootLogger, port: 3000 });
-```
-
-```ts
-// main.ts
-import express from 'express';
-import { service } from './service';
+const service = configureService({ logger: rootLogger, port: 3000 });
 
 const app = express();
 app.get('/hello', (_req, res) => res.json({ hello: 'world' }));
