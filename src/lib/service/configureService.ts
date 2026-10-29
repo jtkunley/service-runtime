@@ -40,7 +40,16 @@ export interface ListenOptions {
      * orchestrator doesn't kill a process that is draining. `false` turns one off.
      */
     probes?: { readiness?: string | false; liveness?: string | false };
-    /** From the first signal to the exit; past it the process exits 1. Default 30000. */
+    /**
+     * How long an idle keep-alive connection stays open. Longer than a load
+     * balancer's own idle timeout (60s for AWS ALB and nginx), or the balancer
+     * can send a request on a connection Node is closing, and answer 502. Default 65000.
+     */
+    keepAliveTimeoutMs?: number;
+    /**
+     * From the first signal to the exit; past it the process exits 1, after up
+     * to a second for the logger to flush. Default 30000.
+     */
     forceExitMs?: number;
     /**
      * Runs before the server stops accepting connections, with readiness
@@ -67,6 +76,7 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
     readonly listen: (app: RequestListener, options: ListenOptions) => Promise<AddressInfo>;
 }
 
+const KEEP_ALIVE_TIMEOUT_MS = 65_000;
 const READINESS_PATH = '/readiness';
 const LIVENESS_PATH = '/liveness';
 
@@ -93,10 +103,19 @@ export function configureService<
     const cleanups: CleanupFn[] = [];
 
     const listen = async (app: RequestListener, listenOptions: ListenOptions) => {
-        const { port, host, probes, forceExitMs, onShutdownStart } = listenOptions;
+        const {
+            port,
+            host,
+            probes,
+            keepAliveTimeoutMs = KEEP_ALIVE_TIMEOUT_MS,
+            forceExitMs,
+            onShutdownStart,
+        } = listenOptions;
         // Before anything process-wide, so a mistake can be corrected and listen called again.
-        if (forceExitMs !== undefined && !(Number.isInteger(forceExitMs) && forceExitMs > 0)) {
-            throw new RangeError('forceExitMs must be a positive integer');
+        for (const [name, value] of Object.entries({ keepAliveTimeoutMs, forceExitMs })) {
+            if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
+                throw new RangeError(`${name} must be a positive integer`);
+            }
         }
         if (listening) {
             throw new Error('Only one service can listen per process');
@@ -122,6 +141,10 @@ export function configureService<
             }
             app(req, res);
         });
+        server.keepAliveTimeout = keepAliveTimeoutMs;
+        // Node requires the headers timeout to outlast keep-alive, and the request timeout to outlast both.
+        server.headersTimeout = keepAliveTimeoutMs + 1_000;
+        server.requestTimeout = Math.max(server.requestTimeout, server.headersTimeout);
 
         setupGracefulShutdown(server, logger, cleanups, { state, forceExitMs, onShutdownStart });
         await new Promise<void>((resolve, reject) => {

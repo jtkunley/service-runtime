@@ -265,6 +265,7 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 | `port` | `number` | required | The port to listen on; `0` picks a free one. |
 | `host` | `string` | all interfaces | The address to listen on. |
 | `probes` | `{ readiness?, liveness? }` | `/readiness`, `/liveness` | Each a path, or `false` to turn it off. |
+| `keepAliveTimeoutMs` | `number` | `65000` | How long an idle keep-alive connection stays open. Keep it above the load balancer's idle timeout (60 seconds for AWS ALB and nginx), or it may send a request on a connection Node is closing and answer 502. The headers timeout is set a second above it. A positive integer. |
 | `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1, after up to a second for the logger to flush. A positive integer. |
 | `onShutdownStart` | `() => void \| Promise<void>` | none | Runs once, with readiness already failing and before the server closes, which waits for a returned promise. |
 

@@ -198,6 +198,23 @@ describe('configureService', () => {
             expect(await (await fetch(`${url}/orders`)).text()).toBe('app');
         });
 
+        it('keeps idle connections open longer than a load balancer does, by default', async () => {
+            await listen(configure());
+
+            const [server] = shutdownCall();
+            expect(server.keepAliveTimeout).toBe(65_000);
+            expect(server.headersTimeout).toBe(66_000);
+        });
+
+        it('takes another keep-alive timeout, raising the request timeout to outlast it', async () => {
+            await listen(configure(), undefined, { keepAliveTimeoutMs: 400_000 });
+
+            const [server] = shutdownCall();
+            expect(server.keepAliveTimeout).toBe(400_000);
+            expect(server.headersTimeout).toBe(401_000);
+            expect(server.requestTimeout).toBe(401_000);
+        });
+
         it('resolves with the address it bound', async () => {
             const service = configure();
 
@@ -219,13 +236,19 @@ describe('configureService', () => {
             expect(mocks.registerFatalHandlers).toHaveBeenCalledOnce();
         });
 
-        it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
-            'refuses forceExitMs %s before registering anything, so listen can be called again',
-            async (forceExitMs) => {
+        it.each(
+            ['forceExitMs', 'keepAliveTimeoutMs'].flatMap((name) =>
+                [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY].map(
+                    (value) => [name, value] as const,
+                ),
+            ),
+        )(
+            'refuses %s %s before registering anything, so listen can be called again',
+            async (name, value) => {
                 const service = configure();
 
-                await expect(service.listen(vi.fn(), { port: 0, forceExitMs })).rejects.toThrow(
-                    new RangeError('forceExitMs must be a positive integer'),
+                await expect(service.listen(vi.fn(), { port: 0, [name]: value })).rejects.toThrow(
+                    new RangeError(`${name} must be a positive integer`),
                 );
                 expect(mocks.registerFatalHandlers).not.toHaveBeenCalled();
                 expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
