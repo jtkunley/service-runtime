@@ -53,7 +53,7 @@ Requires Node.js 22 or later. Bring your own logger: anything that implements th
 import { configureService } from '@jtkunley/service-runtime';
 import { rootLogger } from './logger'; // your RootLogger implementation
 
-export const service = configureService({ logger: rootLogger });
+export const service = configureService({ logger: rootLogger, port: 3000 });
 ```
 
 ```ts
@@ -64,7 +64,7 @@ import { service } from './service';
 const app = express();
 app.get('/hello', (_req, res) => res.json({ hello: 'world' }));
 
-await service.listen(app, { port: 3000 });
+await service.listen(app);
 ```
 
 That's a production-ready server: probes on `/readiness` and `/liveness`, graceful shutdown on SIGTERM and SIGINT, and an exit on any uncaught error. Add [request context](#request-context) when requests carry values, such as a tenant or a request ID, and cleanups when the service opens resources. The component tests run a service using all of it, in [`test/component/fixtures/service.mts`](test/component/fixtures/service.mts).
@@ -197,17 +197,16 @@ await queue.publish(payload, { headers: service.context.getHeaders('platform') }
 // service.ts
 export const service = configureService({
   logger: rootLogger,
+  port: 3000,
   cleanups: [() => queueConsumer.close(), () => db.end()],
+  onShutdownStart: () => new Promise((resolve) => setTimeout(resolve, 10_000)),
 });
 
 // main.ts
-const { port } = await service.listen(app, {
-  port: 3000,
-  onShutdownStart: () => new Promise((resolve) => setTimeout(resolve, 10_000)),
-});
+const { port } = await service.listen(app);
 ```
 
-`listen` takes the app, an Express app or any Node request listener, starts the server, and sets up the probes and graceful shutdown. It resolves with the bound address once the server is listening.
+Everything about the service is configured in one place, and `listen` takes only the app, an Express app or any Node request listener, starts the server, and sets up the probes and graceful shutdown. It resolves with the bound address once the server is listening.
 
 `cleanups`, each a `CleanupFn`, `() => void | Promise<void>`, run in order once the server has closed. List what produces work first (e.g. a message queue consumer), then shared clients (e.g. Redis, the database). Each is called only at shutdown, so it can close a resource opened after the service is configured.
 
@@ -240,9 +239,22 @@ From the moment `listen` is called, an `uncaughtException` or `unhandledRejectio
 
 ## API
 
-### `configureService({ logger, context?, destinations?, cleanups? })`
+### `configureService(options)`
 
-Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context.
+Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context. Throws a `RangeError` for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive integer.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `logger` | `RootLogger` | required | The logger the package's own lines go through. |
+| `port` | `number` | required | The port to listen on; `0` picks a free one. |
+| `host` | `string` | all interfaces | The address to listen on. |
+| `probes` | `{ readiness?, liveness? }` | `/readiness`, `/liveness` | Each a path, or `false` to turn it off. |
+| `context` | `ContextConfig` | none | The values every request carries, by name. See [Declaring the values](#declaring-the-values). |
+| `destinations` | `Record<string, entry names[]>` | none | Each destination the service calls, and the entries whose headers it receives. |
+| `cleanups` | `CleanupFn[]` | none | Run in order on shutdown, once the server has closed. |
+| `onShutdownStart` | `() => void \| Promise<void>` | none | Runs once, with readiness already failing and before the server closes, which waits for a returned promise. |
+| `keepAliveTimeoutMs` | `number` | `65000` | How long an idle keep-alive connection stays open. Keep it above the load balancer's idle timeout (60 seconds for AWS ALB and nginx), or it may send a request on a connection Node is closing and answer 502. The headers timeout is set a second above it. A positive integer. |
+| `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1, after up to a second for the logger to flush. A positive integer. |
 
 | `Service` member | Description |
 |------------------|-------------|
@@ -252,20 +264,11 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 | `context.run(source, fn)` | Works out the values from `source`, `{ headers, method?, path? }`, and runs `fn` inside the context, returning what it returns. Throws if a required value is missing. |
 | `context.getHeaders(destination)` | The headers for a call to a declared destination; `{}` outside a request. Throws for an undeclared one. |
 | `isShuttingDown()` | Whether shutdown has started. |
-| `listen(app, options)` | Registers the fatal error handlers and starts the server; resolves with its `AddressInfo`. One service per process listens; a second call rejects. |
-
-| `listen` option | Type | Default | Description |
-|-----------------|------|---------|-------------|
-| `port` | `number` | required | The port to listen on; `0` picks a free one. |
-| `host` | `string` | all interfaces | The address to listen on. |
-| `probes` | `{ readiness?, liveness? }` | `/readiness`, `/liveness` | Each a path, or `false` to turn it off. |
-| `keepAliveTimeoutMs` | `number` | `65000` | How long an idle keep-alive connection stays open. Keep it above the load balancer's idle timeout (60 seconds for AWS ALB and nginx), or it may send a request on a connection Node is closing and answer 502. The headers timeout is set a second above it. A positive integer. |
-| `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1, after up to a second for the logger to flush. A positive integer. |
-| `onShutdownStart` | `() => void \| Promise<void>` | none | Runs once, with readiness already failing and before the server closes, which waits for a returned promise. |
+| `listen(app)` | Registers the fatal error handlers and starts the server; resolves with its `AddressInfo`. One service per process listens; a second call rejects. |
 
 ### Types
 
-`ServiceOptions`, `Service`, `ListenOptions` and `CleanupFn` describe the API above. `ContextEntry`, `ContextConfig`, `ContextRequest` (what a `value` function receives), `ContextSource` (what `run()` takes) and `ContextValues<C>` (the values of a configuration) are exported for annotating your own code, as are the logger interfaces `RootLogger`, `ChildLogger` and `LogData`.
+`ServiceOptions`, `Service` and `CleanupFn` describe the API above. `ContextEntry`, `ContextConfig`, `ContextRequest` (what a `value` function receives), `ContextSource` (what `run()` takes) and `ContextValues<C>` (the values of a configuration) are exported for annotating your own code, as are the logger interfaces `RootLogger`, `ChildLogger` and `LogData`.
 
 ### Entry points
 

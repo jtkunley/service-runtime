@@ -1,6 +1,5 @@
 export {
     configureService,
-    type ListenOptions,
     type Service,
     type ServiceOptions,
 } from './lib/service/configureService';

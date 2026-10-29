@@ -36,6 +36,8 @@ const rootLogger: RootLogger = {
 
 const service = configureService({
     logger: rootLogger,
+    port: 0,
+    host: '127.0.0.1',
     context: {
         // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
         tenantId: {
@@ -66,6 +68,8 @@ const service = configureService({
             log.info('Database closed', {});
         },
     ],
+    onShutdownStart: () => sleep(Number(env['SHUTDOWN_DELAY_MS'] ?? 0)),
+    forceExitMs: forceExitMs ? Number(forceExitMs) : undefined,
 });
 
 type Destination = Parameters<typeof service.context.getHeaders>[0];
@@ -116,10 +120,5 @@ app.get('/reject', (_req, res) => {
     res.sendStatus(202);
 });
 
-const { port } = await service.listen(app, {
-    port: 0,
-    host: '127.0.0.1',
-    forceExitMs: forceExitMs ? Number(forceExitMs) : undefined,
-    onShutdownStart: () => sleep(Number(env['SHUTDOWN_DELAY_MS'] ?? 0)),
-});
+const { port } = await service.listen(app);
 log.info('Listening', { port });

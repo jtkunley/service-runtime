@@ -25,6 +25,16 @@ import { createShutdownState } from '../shutdown/shutdownState';
 
 export interface ServiceOptions<C extends ContextConfig, D extends Destinations> {
     logger: RootLogger;
+    /** `0` picks a free one. */
+    port: number;
+    /** All interfaces by default. */
+    host?: string;
+    /**
+     * Answered before the app sees the request, so a probe never needs context
+     * values. Readiness fails once shutdown starts; liveness never does, so the
+     * orchestrator doesn't kill a process that is draining. `false` turns one off.
+     */
+    probes?: { readiness?: string | false; liveness?: string | false };
     /** The values every request carries, by name. None by default. */
     context?: C & NoUnknownAttributes<C>;
     /** Each destination the service calls, listing the entries whose headers it receives. */
@@ -35,17 +45,6 @@ export interface ServiceOptions<C extends ContextConfig, D extends Destinations>
      * a resource opened after the service is configured.
      */
     cleanups?: readonly CleanupFn[];
-}
-
-export interface ListenOptions {
-    port: number;
-    host?: string;
-    /**
-     * Answered before the app sees the request, so a probe never needs context
-     * values. Readiness fails once shutdown starts; liveness never does, so the
-     * orchestrator doesn't kill a process that is draining. `false` turns one off.
-     */
-    probes?: { readiness?: string | false; liveness?: string | false };
     /**
      * How long an idle keep-alive connection stays open. Longer than a load
      * balancer's own idle timeout (60s for AWS ALB and nginx), or the balancer
@@ -77,7 +76,7 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
      * Registers the fatal error handlers, then starts the server with graceful
      * shutdown. Resolves with the bound address. One service per process listens.
      */
-    readonly listen: (app: RequestListener, options: ListenOptions) => Promise<AddressInfo>;
+    readonly listen: (app: RequestListener) => Promise<AddressInfo>;
 }
 
 const KEEP_ALIVE_TIMEOUT_MS = 65_000;
@@ -90,12 +89,27 @@ let listening = false;
 /**
  * Touches nothing process-wide until `listen`, so app code that imports the
  * service can be tested without it exiting the test process.
+ *
+ * @throws RangeError for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive integer.
  */
 export function configureService<
     const C extends ContextConfig = Record<never, never>,
     const D extends Destinations = Record<never, never>,
 >(options: ServiceOptions<C, D>): Service<C, D> {
-    const { logger } = options;
+    const {
+        logger,
+        port,
+        host,
+        probes,
+        keepAliveTimeoutMs = KEEP_ALIVE_TIMEOUT_MS,
+        forceExitMs,
+        onShutdownStart,
+    } = options;
+    for (const [name, value] of Object.entries({ keepAliveTimeoutMs, forceExitMs })) {
+        if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
+            throw new RangeError(`${name} must be a positive integer`);
+        }
+    }
     const config = options.context ?? ({} as C & NoUnknownAttributes<C>);
 
     const context = configureContext<C>(config);
@@ -107,21 +121,7 @@ export function configureService<
     const state = createShutdownState();
     const cleanups = [...(options.cleanups ?? [])];
 
-    const listen = async (app: RequestListener, listenOptions: ListenOptions) => {
-        const {
-            port,
-            host,
-            probes,
-            keepAliveTimeoutMs = KEEP_ALIVE_TIMEOUT_MS,
-            forceExitMs,
-            onShutdownStart,
-        } = listenOptions;
-        // Before anything process-wide, so a mistake can be corrected and listen called again.
-        for (const [name, value] of Object.entries({ keepAliveTimeoutMs, forceExitMs })) {
-            if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
-                throw new RangeError(`${name} must be a positive integer`);
-            }
-        }
+    const listen = async (app: RequestListener) => {
         if (listening) {
             throw new Error('Only one service can listen per process');
         }

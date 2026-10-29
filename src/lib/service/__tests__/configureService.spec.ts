@@ -3,6 +3,7 @@ import type { AddressInfo } from 'net';
 import { describe, it, expect, vi, beforeEach, afterEach, expectTypeOf } from 'vitest';
 import type { ChildLogger, RootLogger } from '../../shared/logger';
 import type { GracefulShutdownOptions } from '../../shutdown/gracefulShutdown';
+import type { ServiceOptions } from '../configureService';
 
 const mocks = vi.hoisted(() => ({
     registerFatalHandlers: vi.fn(),
@@ -47,16 +48,25 @@ describe('configureService', () => {
     let configureService: typeof import('../configureService.js').configureService;
     const servers: Server[] = [];
 
-    const configure = (logger: RootLogger = createMockRootLogger()) =>
-        configureService({ logger, context: CONTEXT, destinations: DESTINATIONS });
+    /** On a free port of the loopback interface, with the test context and destinations. */
+    const configure = (
+        options: Partial<ServiceOptions<typeof CONTEXT, typeof DESTINATIONS>> = {},
+    ) =>
+        configureService({
+            logger: createMockRootLogger(),
+            port: 0,
+            host: '127.0.0.1',
+            context: CONTEXT,
+            destinations: DESTINATIONS,
+            ...options,
+        });
 
-    /** Listens on a free port, returning the base URL and the server for cleanup. */
+    /** Returns the base URL, and keeps the server for cleanup. */
     const listen = async (
         service: ReturnType<typeof configure>,
         app = vi.fn((_req: unknown, res: { end(body: string): void }) => res.end('app')),
-        options: Partial<Parameters<typeof service.listen>[1]> = {},
     ) => {
-        const { port } = await service.listen(app, { port: 0, host: '127.0.0.1', ...options });
+        const { port } = await service.listen(app);
         servers.push(shutdownCall()[0]);
         return { url: `http://127.0.0.1:${String(port)}`, app };
     };
@@ -99,6 +109,7 @@ describe('configureService', () => {
         it('makes an attribute ContextEntry does not have a compile error', () => {
             configureService({
                 logger: createMockRootLogger(),
+                port: 0,
                 // @ts-expect-error -- a misspelt attribute would otherwise be ignored silently
                 context: { entry: { value: () => 'v', requried: true } },
             });
@@ -126,7 +137,7 @@ describe('configureService', () => {
 
         it('answers 400 to a request missing a required value, logging through server/context', () => {
             const logger = createMockRootLogger();
-            const service = configure(logger);
+            const service = configure({ logger });
             const response = res();
             const next = vi.fn();
 
@@ -142,8 +153,8 @@ describe('configureService', () => {
             expect(logger.childLogger.error).toHaveBeenCalledOnce();
         });
 
-        it('needs only a logger, carrying no values and letting every request through', () => {
-            const service = configureService({ logger: createMockRootLogger() });
+        it('needs only a logger and a port, carrying no values and letting every request through', () => {
+            const service = configureService({ logger: createMockRootLogger(), port: 0 });
             const next = vi.fn(() => service.context.getStore());
 
             service.middleware({ headers: {}, method: 'GET', originalUrl: '/' }, res(), next);
@@ -186,7 +197,11 @@ describe('configureService', () => {
         });
 
         it('has no destinations when none are declared', () => {
-            const service = configureService({ logger: createMockRootLogger(), context: CONTEXT });
+            const service = configureService({
+                logger: createMockRootLogger(),
+                port: 0,
+                context: CONTEXT,
+            });
 
             // @ts-expect-error -- nothing was declared
             expect(() => service.context.getHeaders('internal')).toThrow('Unknown destination');
@@ -197,18 +212,10 @@ describe('configureService', () => {
         it('registers the fatal handlers, then starts the server and hands it, with the cleanups and the shutdown state, to graceful shutdown', async () => {
             const logger = createMockRootLogger();
             const cleanups = [vi.fn(), vi.fn()];
-            const service = configureService({
-                logger,
-                context: CONTEXT,
-                destinations: DESTINATIONS,
-                cleanups,
-            });
             const onShutdownStart = vi.fn();
+            const service = configure({ logger, cleanups, forceExitMs: 5_000, onShutdownStart });
 
-            const { url } = await listen(service, undefined, {
-                forceExitMs: 5_000,
-                onShutdownStart,
-            });
+            const { url } = await listen(service);
 
             expect(mocks.registerFatalHandlers).toHaveBeenCalledWith(logger);
             expect(mocks.registerFatalHandlers.mock.invocationCallOrder[0]).toBeLessThan(
@@ -231,7 +238,7 @@ describe('configureService', () => {
         });
 
         it('takes another keep-alive timeout, raising the request timeout to outlast it', async () => {
-            await listen(configure(), undefined, { keepAliveTimeoutMs: 400_000 });
+            await listen(configure({ keepAliveTimeoutMs: 400_000 }));
 
             const [server] = shutdownCall();
             expect(server.keepAliveTimeout).toBe(400_000);
@@ -242,7 +249,7 @@ describe('configureService', () => {
         it('resolves with the address it bound', async () => {
             const service = configure();
 
-            const address = await service.listen(vi.fn(), { port: 0, host: '127.0.0.1' });
+            const address = await service.listen(vi.fn());
             servers.push(shutdownCall()[0]);
 
             expect(address).toEqual(shutdownCall()[0].address());
@@ -253,7 +260,7 @@ describe('configureService', () => {
             await listen(service);
 
             for (const second of [service, configure()]) {
-                await expect(second.listen(vi.fn(), { port: 0 })).rejects.toThrow(
+                await expect(second.listen(vi.fn())).rejects.toThrow(
                     'Only one service can listen per process',
                 );
             }
@@ -266,34 +273,21 @@ describe('configureService', () => {
                     (value) => [name, value] as const,
                 ),
             ),
-        )(
-            'refuses %s %s before registering anything, so listen can be called again',
-            async (name, value) => {
-                const service = configure();
-
-                await expect(service.listen(vi.fn(), { port: 0, [name]: value })).rejects.toThrow(
-                    new RangeError(`${name} must be a positive integer`),
-                );
-                expect(mocks.registerFatalHandlers).not.toHaveBeenCalled();
-                expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
-
-                await listen(service);
-                expect(mocks.setupGracefulShutdown).toHaveBeenCalledOnce();
-            },
-        );
+        )('refuses %s %s when configured', (name, value) => {
+            expect(() => configure({ [name]: value })).toThrow(
+                new RangeError(`${name} must be a positive integer`),
+            );
+        });
 
         it('rejects when the port is taken', async () => {
             const taken = createServer();
             await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve));
             servers.push(taken);
-            const service = configure();
+            const service = configure({ port: (taken.address() as AddressInfo).port });
 
-            await expect(
-                service.listen(vi.fn(), {
-                    port: (taken.address() as AddressInfo).port,
-                    host: '127.0.0.1',
-                }),
-            ).rejects.toThrow(expect.objectContaining({ code: 'EADDRINUSE' }) as Error);
+            await expect(service.listen(vi.fn())).rejects.toThrow(
+                expect.objectContaining({ code: 'EADDRINUSE' }) as Error,
+            );
         });
     });
 
@@ -328,9 +322,9 @@ describe('configureService', () => {
         });
 
         it('keeps the default path for a probe given as undefined', async () => {
-            const { url, app } = await listen(configure(), undefined, {
-                probes: { readiness: undefined, liveness: undefined },
-            });
+            const { url, app } = await listen(
+                configure({ probes: { readiness: undefined, liveness: undefined } }),
+            );
 
             expect((await fetch(`${url}/readiness`)).status).toBe(200);
             expect((await fetch(`${url}/liveness`)).status).toBe(200);
@@ -338,9 +332,9 @@ describe('configureService', () => {
         });
 
         it('serves probes on the paths given, and none where turned off', async () => {
-            const { url, app } = await listen(configure(), undefined, {
-                probes: { readiness: '/ready', liveness: false },
-            });
+            const { url, app } = await listen(
+                configure({ probes: { readiness: '/ready', liveness: false } }),
+            );
 
             expect((await fetch(`${url}/ready`)).status).toBe(200);
             expect(await (await fetch(`${url}/liveness`)).text()).toBe('app');
