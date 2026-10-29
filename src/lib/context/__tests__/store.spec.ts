@@ -6,107 +6,110 @@ import {
     getStore,
     _resetForTesting,
 } from '../store';
-import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../headers';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 beforeEach(() => {
     _resetForTesting();
 });
 
-describe('headers', () => {
-    it('exports correct header names', () => {
-        expect(ORGANIZATION_ID_HEADER).toBe('x-organization-id');
-        expect(CORRELATION_ID_HEADER).toBe('correlation-id');
-    });
-});
-
 describe('run', () => {
-    it('returns the fn return value', () => {
-        const result = run(
-            { organizationId: 'org-1', correlationId: 'corr-1' },
-            () => 42,
-        );
-        expect(result).toBe(42);
+    it('returns what the function returns, a promise included', async () => {
+        expect(run({ organizationId: 'org-1' }, () => 42)).toBe(42);
+        await expect(
+            run({ organizationId: 'org-1' }, () => Promise.resolve('done')),
+        ).resolves.toBe('done');
     });
 
-    it('generates correlationId if not provided', () => {
-        run({ organizationId: 'org-1' }, () => {
-            expect(getCorrelationId()).toMatch(/^[0-9a-f-]{36}$/);
-        });
-    });
-
-    it('generates correlationId when empty string provided', () => {
-        run({ organizationId: 'org-1', correlationId: '' }, () => {
-            expect(getCorrelationId()).toMatch(/^[0-9a-f-]{36}$/);
-        });
-    });
-
-    it('throws when organizationId is whitespace only', () => {
-        expect(() => run({ organizationId: '   ' }, () => {})).toThrow(
-            'organizationId must not be empty',
-        );
-    });
-
-    it('trims whitespace from organizationId', () => {
-        run({ organizationId: '  org-1  ' }, () => {
-            expect(getOrganizationId()).toBe('org-1');
-        });
-    });
-
-    it('trims whitespace from correlationId', () => {
-        run({ organizationId: 'org-1', correlationId: '  corr-1  ' }, () => {
-            expect(getCorrelationId()).toBe('corr-1');
-        });
-    });
-
-    it('generates correlationId when whitespace-only string provided', () => {
-        run({ organizationId: 'org-1', correlationId: '   ' }, () => {
-            expect(getCorrelationId()).toMatch(/^[0-9a-f-]{36}$/);
-        });
-    });
-
-    it('makes organizationId accessible inside scope', () => {
-        run({ organizationId: 'org-abc' }, () => {
-            expect(getOrganizationId()).toBe('org-abc');
-        });
-    });
-
-    it('makes correlationId accessible inside scope', () => {
-        run({ organizationId: 'org-abc', correlationId: 'corr-xyz' }, () => {
-            expect(getCorrelationId()).toBe('corr-xyz');
-        });
-    });
-
-    it('propagates through async calls', async () => {
-        await run({ organizationId: 'org-async' }, async () => {
-            await Promise.resolve();
-            expect(getOrganizationId()).toBe('org-async');
-        });
-    });
-});
-
-describe('getOrganizationId', () => {
-    it('throws outside a context scope', () => {
-        expect(() => getOrganizationId()).toThrow('No request context');
-    });
-});
-
-describe('getCorrelationId', () => {
-    it('throws outside a context scope', () => {
-        expect(() => getCorrelationId()).toThrow('No request context');
-    });
-});
-
-describe('getStore', () => {
-    it('returns undefined outside a context scope', () => {
+    it('lets an error from the function propagate and ends the context', () => {
+        expect(() =>
+            run({ organizationId: 'org-1' }, () => {
+                throw new Error('boom');
+            }),
+        ).toThrow('boom');
         expect(getStore()).toBeUndefined();
     });
 
-    it('returns the context object inside a scope', () => {
-        run({ organizationId: 'org-1', correlationId: 'corr-1' }, () => {
+    it('trims both IDs', () => {
+        run({ organizationId: '  org-1  ', correlationId: '  corr-1  ' }, () => {
             expect(getStore()).toEqual({
                 organizationId: 'org-1',
                 correlationId: 'corr-1',
             });
         });
+    });
+
+    it.each(['', '   '])(
+        'refuses an organizationId of %j before running the function',
+        (organizationId) => {
+            let ran = false;
+            expect(() =>
+                run({ organizationId }, () => {
+                    ran = true;
+                }),
+            ).toThrow('organizationId must not be empty');
+            expect(ran).toBe(false);
+        },
+    );
+
+    it.each([undefined, '', '   '])(
+        'generates a UUID correlationId when given %j',
+        (correlationId) => {
+            run({ organizationId: 'org-1', correlationId }, () => {
+                expect(getCorrelationId()).toMatch(UUID);
+            });
+        },
+    );
+
+    it('generates a different correlationId for each run', () => {
+        const ids = [1, 2].map(() =>
+            run({ organizationId: 'org-1' }, () => getCorrelationId()),
+        );
+        expect(ids[0]).not.toBe(ids[1]);
+    });
+});
+
+describe('context scope', () => {
+    it('follows the work through awaits and timers', async () => {
+        await run({ organizationId: 'org-async' }, async () => {
+            await Promise.resolve();
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            expect(getOrganizationId()).toBe('org-async');
+        });
+    });
+
+    it('keeps concurrent runs apart', async () => {
+        const seen = await Promise.all(
+            ['org-a', 'org-b'].map((organizationId, i) =>
+                run({ organizationId }, async () => {
+                    await new Promise((resolve) => setTimeout(resolve, 5 - i * 4));
+                    return getOrganizationId();
+                }),
+            ),
+        );
+        expect(seen).toEqual(['org-a', 'org-b']);
+    });
+
+    it('lets a nested run replace the context, and restores the outer one after it', () => {
+        run({ organizationId: 'outer', correlationId: 'corr-outer' }, () => {
+            run({ organizationId: 'inner', correlationId: 'corr-inner' }, () => {
+                expect(getStore()).toEqual({
+                    organizationId: 'inner',
+                    correlationId: 'corr-inner',
+                });
+            });
+            expect(getOrganizationId()).toBe('outer');
+        });
+    });
+});
+
+describe('outside a context', () => {
+    it('getStore is undefined', () => {
+        expect(getStore()).toBeUndefined();
+    });
+
+    it('getOrganizationId and getCorrelationId throw', () => {
+        expect(() => getOrganizationId()).toThrow('No request context');
+        expect(() => getCorrelationId()).toThrow('No request context');
     });
 });

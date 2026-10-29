@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     resolveContext,
     resolveRequestContext,
@@ -7,153 +7,101 @@ import {
 import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../../headers';
 
 describe('resolveContext', () => {
-    it('returns error when organizationId and correlationId absent and no default', () => {
-        expect(resolveContext(undefined, undefined, {})).toMatchObject({
-            type: 'error',
-            status: 400,
+    describe('multi-tenant, with no default organization', () => {
+        it('takes the organization and correlation IDs from the caller, trimmed', () => {
+            expect(resolveContext('  org-1  ', '  corr-1  ', {})).toEqual({
+                type: 'ok',
+                organizationId: 'org-1',
+                correlationId: 'corr-1',
+            });
+        });
+
+        it.each([undefined, '', '   '])(
+            'rejects an organization ID of %j with 400, keeping the correlation ID',
+            (organizationId) => {
+                expect(resolveContext(organizationId, 'corr-1', {})).toEqual({
+                    type: 'error',
+                    status: 400,
+                    error: MISSING_ORG_ERROR,
+                    organizationId: undefined,
+                    correlationId: 'corr-1',
+                });
+            },
+        );
+
+        it.each([undefined, '', '   '])(
+            'treats a default of %j as none',
+            (defaultOrgId) => {
+                expect(
+                    resolveContext(undefined, undefined, {
+                        getDefaultOrgId: () => defaultOrgId,
+                    }),
+                ).toMatchObject({ type: 'error', status: 400 });
+            },
+        );
+    });
+
+    describe('single-tenant, with a default organization', () => {
+        it.each([
+            ['no organization ID', undefined],
+            ['the same organization ID', 'default-org'],
+            ['a different organization ID', 'other-org'],
+        ])('runs under the default, trimmed, given %s', (_name, given) => {
+            expect(
+                resolveContext(given, 'corr-1', {
+                    getDefaultOrgId: () => '  default-org  ',
+                }),
+            ).toEqual({
+                type: 'ok',
+                organizationId: 'default-org',
+                correlationId: 'corr-1',
+            });
+        });
+
+        it('reads the default on every call', () => {
+            const getDefaultOrgId = vi
+                .fn<() => string | undefined>()
+                .mockReturnValueOnce('org-a')
+                .mockReturnValueOnce('org-b');
+            const opts = { getDefaultOrgId };
+
+            expect(resolveContext(undefined, undefined, opts)).toMatchObject({ organizationId: 'org-a' });
+            expect(resolveContext(undefined, undefined, opts)).toMatchObject({ organizationId: 'org-b' });
         });
     });
 
-    it('returns ok with the given organizationId and correlationId', () => {
-        expect(resolveContext('org-1', 'corr-1', {})).toMatchObject({
-            type: 'ok',
-            organizationId: 'org-1',
-            correlationId: 'corr-1',
-        });
-    });
-
-    it('proceeds under the default org ID when given org ID mismatches (single-tenant)', () => {
-        const result = resolveContext('other-org', 'corr-1', {
-            getDefaultOrgId: () => 'default-org',
-        });
-        expect(result).toMatchObject({
-            type: 'ok',
-            organizationId: 'default-org',
-        });
-    });
-
-    it('trims whitespace from both values', () => {
-        const result = resolveContext('  org-1  ', '  corr-1  ', {});
-        expect(result).toMatchObject({
-            type: 'ok',
-            organizationId: 'org-1',
-            correlationId: 'corr-1',
-        });
-    });
+    it.each([undefined, '', '   '])(
+        'leaves the correlation ID undefined when given %j',
+        (correlationId) => {
+            expect(resolveContext('org-1', correlationId, {})).toMatchObject({
+                type: 'ok',
+                correlationId: undefined,
+            });
+        },
+    );
 });
 
 describe('resolveRequestContext', () => {
-    it('returns missing when org header absent and no fallback', () => {
+    it('reads both IDs from their request headers', () => {
+        expect(
+            resolveRequestContext(
+                {
+                    [ORGANIZATION_ID_HEADER]: 'org-1',
+                    [CORRELATION_ID_HEADER]: 'corr-1',
+                },
+                {},
+            ),
+        ).toEqual({
+            type: 'ok',
+            organizationId: 'org-1',
+            correlationId: 'corr-1',
+        });
+    });
+
+    it('rejects a request without the organization header', () => {
         expect(resolveRequestContext({}, {})).toMatchObject({
             type: 'error',
-            status: 400,
+            error: `Missing required header: ${ORGANIZATION_ID_HEADER}`,
         });
-    });
-
-    it('returns missing when getDefaultOrgId returns undefined', () => {
-        expect(
-            resolveRequestContext({}, { getDefaultOrgId: () => undefined }),
-        ).toMatchObject({ type: 'error', status: 400 });
-    });
-
-    it('returns ok with orgId from header', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: 'org-1' },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'ok', organizationId: 'org-1' });
-    });
-
-    it('returns ok with orgId from default when no header', () => {
-        const result = resolveRequestContext(
-            {},
-            { getDefaultOrgId: () => 'default-org' },
-        );
-        expect(result).toMatchObject({
-            type: 'ok',
-            organizationId: 'default-org',
-        });
-    });
-
-    it('returns ok when header and default match', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: 'org-1' },
-            { getDefaultOrgId: () => 'org-1' },
-        );
-        expect(result).toMatchObject({ type: 'ok', organizationId: 'org-1' });
-    });
-
-    it('proceeds under the configured default when header org ID mismatches (single-tenant)', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: 'header-org' },
-            { getDefaultOrgId: () => 'default-org' },
-        );
-        expect(result).toMatchObject({
-            type: 'ok',
-            organizationId: 'default-org',
-        });
-    });
-
-    it('returns ok with correlationId from header', () => {
-        const result = resolveRequestContext(
-            {
-                [ORGANIZATION_ID_HEADER]: 'org-1',
-                [CORRELATION_ID_HEADER]: 'corr-1',
-            },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'ok', correlationId: 'corr-1' });
-    });
-
-    it('returns ok with undefined correlationId when header absent', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: 'org-1' },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'ok', correlationId: undefined });
-    });
-
-    it('trims whitespace from header org ID', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: '  org-1  ' },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'ok', organizationId: 'org-1' });
-    });
-
-    it('trims whitespace from correlation ID header', () => {
-        const result = resolveRequestContext(
-            {
-                [ORGANIZATION_ID_HEADER]: 'org-1',
-                [CORRELATION_ID_HEADER]: '  corr-1  ',
-            },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'ok', correlationId: 'corr-1' });
-    });
-
-    it('returns error when org ID header is whitespace only', () => {
-        const result = resolveRequestContext(
-            { [ORGANIZATION_ID_HEADER]: '   ' },
-            {},
-        );
-        expect(result).toMatchObject({ type: 'error' });
-    });
-
-    it('trims getDefaultOrgId value', () => {
-        const result = resolveRequestContext(
-            {},
-            { getDefaultOrgId: () => '  default-org  ' },
-        );
-        expect(result).toMatchObject({
-            type: 'ok',
-            organizationId: 'default-org',
-        });
-    });
-});
-
-describe('headers', () => {
-    it('MISSING_ORG_ERROR references correct header name', () => {
-        expect(MISSING_ORG_ERROR).toContain(ORGANIZATION_ID_HEADER);
     });
 });

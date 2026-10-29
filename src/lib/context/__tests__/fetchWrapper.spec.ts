@@ -3,276 +3,159 @@ import { createFetchWrapper } from '../fetchWrapper';
 import { run, _resetForTesting } from '../store';
 import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../headers';
 
+const URL_ = 'https://example.com/api';
+const CTX = { organizationId: 'ctx-org', correlationId: 'ctx-corr' };
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
 beforeEach(() => {
     _resetForTesting();
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('ok')));
+    fetchMock = vi.fn().mockResolvedValue(new Response('ok'));
+    vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
 
+/** The request fetch was asked for, resolved the way fetch itself resolves it. */
+const sentRequest = (): Request => {
+    const [input, init] = fetchMock.mock.calls[0] as [
+        string | URL | Request,
+        RequestInit?,
+    ];
+    return new Request(input, init);
+};
+
 describe('createFetchWrapper', () => {
-    it('delegates to globalThis.fetch', async () => {
+    it('returns the response from the global fetch, looked up at call time', async () => {
         const fetchWrapper = createFetchWrapper();
-        await fetchWrapper('https://example.com/api');
-        expect(globalThis.fetch).toHaveBeenCalledOnce();
+        const response = new Response('later');
+        const laterFetch = vi.fn().mockResolvedValue(response);
+        vi.stubGlobal('fetch', laterFetch);
+
+        await expect(fetchWrapper(URL_)).resolves.toBe(response);
+        expect(laterFetch).toHaveBeenCalledOnce();
     });
 
-    it('injects org and correlation headers from context', async () => {
-        const fetchWrapper = createFetchWrapper();
-        await run({ organizationId: 'org-1', correlationId: 'corr-1' }, () =>
-            fetchWrapper('https://example.com/api'),
-        );
-        const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-            .calls[0]!;
-        const headers = new Headers(init?.headers);
-        expect(headers.get(ORGANIZATION_ID_HEADER)).toBe('org-1');
-        expect(headers.get(CORRELATION_ID_HEADER)).toBe('corr-1');
+    it('passes the call through untouched outside a request context', async () => {
+        const init = { headers: { 'x-custom': 'value' } };
+
+        await createFetchWrapper()(URL_, init);
+
+        expect(fetchMock).toHaveBeenCalledWith(URL_, init);
     });
 
-    it('does not inject headers when called outside context', async () => {
-        const fetchWrapper = createFetchWrapper();
-        await fetchWrapper('https://example.com/api');
-        const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-            .calls[0]!;
-        const headers = new Headers(init?.headers);
-        expect(headers.get(ORGANIZATION_ID_HEADER)).toBeNull();
-        expect(headers.get(CORRELATION_ID_HEADER)).toBeNull();
+    it('passes the call through untouched when both headers are turned off', async () => {
+        const fetchWrapper = createFetchWrapper({
+            organizationId: false,
+            correlationId: false,
+        });
+        const init = { headers: { 'x-custom': 'value' } };
+
+        await run(CTX, () => fetchWrapper(URL_, init));
+
+        expect(fetchMock).toHaveBeenCalledWith(URL_, init);
     });
 
-    it('overrides caller-provided context headers with context values', async () => {
-        const fetchWrapper = createFetchWrapper();
-        await run(
-            { organizationId: 'ctx-org', correlationId: 'ctx-corr' },
-            () =>
-                fetchWrapper('https://example.com/api', {
-                    headers: {
-                        [ORGANIZATION_ID_HEADER]: 'caller-org',
-                        [CORRELATION_ID_HEADER]: 'caller-corr',
-                    },
-                }),
-        );
-        const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-            .calls[0]!;
-        const headers = new Headers(init?.headers);
-        expect(headers.get(ORGANIZATION_ID_HEADER)).toBe('ctx-org');
-        expect(headers.get(CORRELATION_ID_HEADER)).toBe('ctx-corr');
-    });
-
-    it('works when init.headers is a Headers instance', async () => {
-        const fetchWrapper = createFetchWrapper();
-        const existingHeaders = new Headers({ 'x-custom': 'value' });
-        await run({ organizationId: 'org-1', correlationId: 'corr-1' }, () =>
-            fetchWrapper('https://example.com/api', {
-                headers: existingHeaders,
+    it('replaces caller-provided context headers with the context values', async () => {
+        await run(CTX, () =>
+            createFetchWrapper()(URL_, {
+                headers: {
+                    [ORGANIZATION_ID_HEADER]: 'caller-org',
+                    [CORRELATION_ID_HEADER]: 'caller-corr',
+                },
             }),
         );
-        const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-            .calls[0]!;
-        const headers = new Headers(init?.headers);
-        expect(headers.get('x-custom')).toBe('value');
-        expect(headers.get(ORGANIZATION_ID_HEADER)).toBe('org-1');
-        expect(headers.get(CORRELATION_ID_HEADER)).toBe('corr-1');
+
+        expect(sentRequest().headers.get(ORGANIZATION_ID_HEADER)).toBe('ctx-org');
+        expect(sentRequest().headers.get(CORRELATION_ID_HEADER)).toBe('ctx-corr');
     });
 
-    it('preserves existing headers on the request', async () => {
-        const fetchWrapper = createFetchWrapper();
-        await run({ organizationId: 'org-1', correlationId: 'corr-1' }, () =>
-            fetchWrapper('https://example.com/api', {
-                headers: { 'x-custom': 'value' },
-            }),
+    it('never changes the headers the caller passed in', async () => {
+        const headers = new Headers({ 'x-custom': 'value' });
+
+        await run(CTX, () => createFetchWrapper()(URL_, { headers }));
+
+        expect([...headers.keys()]).toEqual(['x-custom']);
+    });
+
+    it('keeps a Request input’s method and body', async () => {
+        await run(CTX, () =>
+            createFetchWrapper()(
+                new Request(URL_, { method: 'POST', body: 'payload' }),
+            ),
         );
-        const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock
-            .calls[0]!;
-        const headers = new Headers(init?.headers);
-        expect(headers.get('x-custom')).toBe('value');
-        expect(headers.get(ORGANIZATION_ID_HEADER)).toBe('org-1');
+
+        const request = sentRequest();
+        expect(request.method).toBe('POST');
+        expect(await request.text()).toBe('payload');
+        expect(request.headers.get(ORGANIZATION_ID_HEADER)).toBe('ctx-org');
     });
 
-    describe('options', () => {
-        const sentHeaders = () =>
-            new Headers(
-                (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1]
-                    ?.headers,
+    it('lets init.headers win over a Request input’s headers, like fetch itself', async () => {
+        await run(CTX, () =>
+            createFetchWrapper()(
+                new Request(URL_, { headers: { 'x-from': 'request' } }),
+                { headers: { 'x-from': 'init' } },
+            ),
+        );
+
+        expect(sentRequest().headers.get('x-from')).toBe('init');
+    });
+
+    describe.each([
+        { name: 'by default', options: {}, org: 'ctx-org', corr: 'ctx-corr' },
+        {
+            name: 'with organizationId off',
+            options: { organizationId: false },
+            org: null,
+            corr: 'ctx-corr',
+        },
+        {
+            name: 'with correlationId off',
+            options: { correlationId: false },
+            org: 'ctx-org',
+            corr: null,
+        },
+    ])('$name', ({ options, org, corr }) => {
+        const sources: [string, () => [string | URL | Request, RequestInit?]][] = [
+            ['no init', () => [URL_]],
+            ['an init.headers object', () => [URL_, { headers: { authorization: 'Bearer t' } }]],
+            ['an init.headers Headers', () => [URL_, { headers: new Headers({ authorization: 'Bearer t' }) }]],
+            ['init.headers tuples', () => [URL_, { headers: [['authorization', 'Bearer t']] }]],
+            ['a Request', () => [new Request(URL_, { headers: { authorization: 'Bearer t' } })]],
+            ['a Request with an empty init', () => [new Request(URL_, { headers: { authorization: 'Bearer t' } }), {}]],
+            ['a URL with init.headers', () => [new URL(URL_), { headers: { authorization: 'Bearer t' } }]],
+        ];
+
+        it.each(sources)(
+            'sends the context headers and keeps the caller’s, given %s',
+            async (source, args) => {
+                await run(CTX, () => createFetchWrapper(options)(...args()));
+
+                const { headers } = sentRequest();
+                expect(headers.get(ORGANIZATION_ID_HEADER)).toBe(org);
+                expect(headers.get(CORRELATION_ID_HEADER)).toBe(corr);
+                expect(headers.get('authorization')).toBe(
+                    source === 'no init' ? null : 'Bearer t',
+                );
+            },
+        );
+    });
+
+    const callerOrgSources: [string, () => [string | URL | Request, RequestInit?]][] = [
+        ['an init.headers object', () => [URL_, { headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' } }]],
+        ['a Request', () => [new Request(URL_, { headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' } })]],
+    ];
+
+    it.each(callerOrgSources)(
+        'leaves a caller’s own organization header alone when organizationId is off, given %s',
+        async (_source, args) => {
+            await run(CTX, () =>
+                createFetchWrapper({ organizationId: false })(...args()),
             );
 
-        it('skips org header when organizationId is false', async () => {
-            const fetchWrapper = createFetchWrapper({ organizationId: false });
-            await run(
-                { organizationId: 'org-1', correlationId: 'corr-1' },
-                () => fetchWrapper('https://example.com/api'),
-            );
-            expect(sentHeaders().get(ORGANIZATION_ID_HEADER)).toBeNull();
-            expect(sentHeaders().get(CORRELATION_ID_HEADER)).toBe('corr-1');
-        });
-
-        it('skips correlation header when correlationId is false', async () => {
-            const fetchWrapper = createFetchWrapper({ correlationId: false });
-            await run(
-                { organizationId: 'org-1', correlationId: 'corr-1' },
-                () => fetchWrapper('https://example.com/api'),
-            );
-            expect(sentHeaders().get(ORGANIZATION_ID_HEADER)).toBe('org-1');
-            expect(sentHeaders().get(CORRELATION_ID_HEADER)).toBeNull();
-        });
-
-        it('passes init through untouched when both are disabled', async () => {
-            const fetchWrapper = createFetchWrapper({
-                organizationId: false,
-                correlationId: false,
-            });
-            const init = { headers: { 'x-custom': 'value' } };
-            await run(
-                { organizationId: 'org-1', correlationId: 'corr-1' },
-                () => fetchWrapper('https://example.com/api', init),
-            );
-            expect(globalThis.fetch).toHaveBeenCalledWith(
-                'https://example.com/api',
-                init,
-            );
-        });
-
-        it('leaves a caller-provided org header alone when organizationId is false', async () => {
-            const fetchWrapper = createFetchWrapper({ organizationId: false });
-            await run(
-                { organizationId: 'ctx-org', correlationId: 'corr-1' },
-                () =>
-                    fetchWrapper('https://example.com/api', {
-                        headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' },
-                    }),
-            );
-            expect(sentHeaders().get(ORGANIZATION_ID_HEADER)).toBe(
+            expect(sentRequest().headers.get(ORGANIZATION_ID_HEADER)).toBe(
                 'caller-org',
             );
-        });
-    });
-
-    describe('caller header sources', () => {
-        const URL_ = 'https://example.com/api';
-        const ctx = { organizationId: 'ctx-org', correlationId: 'ctx-corr' };
-
-        const sent = () => {
-            const [input, init] = (globalThis.fetch as ReturnType<typeof vi.fn>)
-                .mock.calls[0]!;
-            return new Request(input, init).headers;
-        };
-
-        const sources: [string, () => [string | URL | Request, RequestInit?]][] = [
-            [
-                'init.headers object',
-                () => [URL_, { headers: { authorization: 'Bearer t' } }],
-            ],
-            [
-                'init.headers Headers',
-                () => [
-                    URL_,
-                    { headers: new Headers({ authorization: 'Bearer t' }) },
-                ],
-            ],
-            [
-                'init.headers tuples',
-                () => [URL_, { headers: [['authorization', 'Bearer t']] }],
-            ],
-            [
-                'Request headers',
-                () => [
-                    new Request(URL_, {
-                        headers: { authorization: 'Bearer t' },
-                    }),
-                ],
-            ],
-            [
-                'Request headers with empty init',
-                () => [
-                    new Request(URL_, {
-                        headers: { authorization: 'Bearer t' },
-                    }),
-                    {},
-                ],
-            ],
-            [
-                'URL object with init.headers',
-                () => [
-                    new URL(URL_),
-                    { headers: { authorization: 'Bearer t' } },
-                ],
-            ],
-        ];
-
-        const configs = [
-            { name: 'default', options: {}, org: 'ctx-org', corr: 'ctx-corr' },
-            {
-                name: 'organizationId false',
-                options: { organizationId: false },
-                org: null,
-                corr: 'ctx-corr',
-            },
-            {
-                name: 'correlationId false',
-                options: { correlationId: false },
-                org: 'ctx-org',
-                corr: null,
-            },
-            {
-                name: 'both false',
-                options: { organizationId: false, correlationId: false },
-                org: null,
-                corr: null,
-            },
-        ];
-
-        describe.each(configs)('$name', ({ options, org, corr }) => {
-            it.each(sources)(
-                'keeps caller headers from %s',
-                async (_, args) => {
-                    const fetchWrapper = createFetchWrapper(options);
-                    await run(ctx, () => fetchWrapper(...args()));
-                    const headers = sent();
-                    expect(headers.get('authorization')).toBe('Bearer t');
-                    expect(headers.get(ORGANIZATION_ID_HEADER)).toBe(org);
-                    expect(headers.get(CORRELATION_ID_HEADER)).toBe(corr);
-                },
-            );
-        });
-
-        it('keeps a caller org header on a Request when organizationId is false', async () => {
-            const fetchWrapper = createFetchWrapper({ organizationId: false });
-            await run(ctx, () =>
-                fetchWrapper(
-                    new Request(URL_, {
-                        headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' },
-                    }),
-                ),
-            );
-            expect(sent().get(ORGANIZATION_ID_HEADER)).toBe('caller-org');
-        });
-
-        it('lets init.headers win over Request headers, like native fetch', async () => {
-            const fetchWrapper = createFetchWrapper();
-            await run(ctx, () =>
-                fetchWrapper(
-                    new Request(URL_, { headers: { 'x-from': 'request' } }),
-                    { headers: { 'x-from': 'init' } },
-                ),
-            );
-            expect(sent().get('x-from')).toBe('init');
-        });
-
-        it('preserves Request method and body', async () => {
-            const fetchWrapper = createFetchWrapper();
-            await run(ctx, () =>
-                fetchWrapper(
-                    new Request(URL_, {
-                        method: 'POST',
-                        body: 'payload',
-                        headers: { authorization: 'Bearer t' },
-                    }),
-                ),
-            );
-            const [input, init] = (globalThis.fetch as ReturnType<typeof vi.fn>)
-                .mock.calls[0]!;
-            const req = new Request(input, init);
-            expect(req.method).toBe('POST');
-            expect(await req.text()).toBe('payload');
-            expect(req.headers.get('authorization')).toBe('Bearer t');
-        });
-    });
+        },
+    );
 });
