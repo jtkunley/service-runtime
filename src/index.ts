@@ -14,17 +14,17 @@ export { registerFatalHandlers } from './lib/lifecycle/fatalHandlers';
 
 export {
     run,
-    getOrganizationId,
-    getCorrelationId,
+    getOrgId,
+    getRequestId,
     getStore,
 } from './lib/context/store';
 export {
-    ORGANIZATION_ID_HEADER,
-    CORRELATION_ID_HEADER,
+    ORG_ID_HEADER,
+    REQUEST_ID_HEADER,
 } from './lib/context/headers';
 export {
     MISSING_ORG_ERROR,
-    MISSING_CORRELATION_WARN,
+    MISSING_REQUEST_ID_WARN,
 } from './lib/context/middleware/resolveContext';
 export {
     createExpressMiddleware,

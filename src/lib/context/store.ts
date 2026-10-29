@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 
-type Store = { organizationId: string; correlationId: string };
+type Store = { orgId: string; requestId: string };
 
 let _als = new AsyncLocalStorage<Store>();
 
@@ -10,18 +10,18 @@ export function _resetForTesting(): void {
 }
 
 export function run<T>(
-    ctx: { organizationId: string; correlationId?: string },
+    ctx: { orgId: string; requestId?: string },
     fn: () => T,
 ): T {
-    const organizationId = ctx.organizationId.trim();
+    const orgId = ctx.orgId.trim();
     // Fail loud at the boundary — an empty org ID would silently scope all
     // downstream data access to nothing or the wrong tenant.
-    if (!organizationId) throw new Error('organizationId must not be empty');
+    if (!orgId) throw new Error('orgId must not be empty');
 
     const store: Store = {
-        organizationId,
+        orgId,
         // Use || not ?? — treats empty/blank string as absent (e.g. header present but whitespace).
-        correlationId: ctx.correlationId?.trim() || randomUUID(),
+        requestId: ctx.requestId?.trim() || randomUUID(),
     };
     return _als.run(store, fn);
 }
@@ -30,14 +30,14 @@ export function getStore(): Store | undefined {
     return _als.getStore();
 }
 
-export function getOrganizationId(): string {
+export function getOrgId(): string {
     const store = _als.getStore();
     if (!store) throw new Error('No request context');
-    return store.organizationId;
+    return store.orgId;
 }
 
-export function getCorrelationId(): string {
+export function getRequestId(): string {
     const store = _als.getStore();
     if (!store) throw new Error('No request context');
-    return store.correlationId;
+    return store.requestId;
 }

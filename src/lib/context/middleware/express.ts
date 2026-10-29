@@ -3,7 +3,7 @@ import { run } from '../store';
 import {
     resolveRequestContext,
     type MiddlewareOptions,
-    MISSING_CORRELATION_WARN,
+    MISSING_REQUEST_ID_WARN,
 } from './resolveContext';
 
 export type { MiddlewareOptions as ExpressMiddlewareOptions };
@@ -22,19 +22,19 @@ export function createExpressMiddleware(opts: MiddlewareOptions = {}) {
     return (req: Req, res: Res, next: () => void): void => {
         const { method, url: path, headers } = req;
         const result = resolveRequestContext(headers, opts);
-        const { type, organizationId, correlationId } = result;
+        const { type, orgId, requestId } = result;
         const logData = {
             method,
             path,
-            organizationId,
-            correlationId,
+            orgId,
+            requestId,
             userAgent: headers['user-agent'],
         };
 
-        // Always check correlation ID first — surfaces missing header even when
+        // Always check request ID first — surfaces missing header even when
         // the request is also rejected, so all problems are logged in one pass.
-        if (!correlationId) {
-            logger?.warn(MISSING_CORRELATION_WARN, logData);
+        if (!requestId) {
+            logger?.warn(MISSING_REQUEST_ID_WARN, logData);
         }
 
         if (type === 'error') {

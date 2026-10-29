@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createKoaMiddleware } from '../koa';
-import { getStore, getCorrelationId, _resetForTesting } from '../../store';
-import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../../headers';
-import { MISSING_ORG_ERROR, MISSING_CORRELATION_WARN } from '../resolveContext';
+import { getStore, getRequestId, _resetForTesting } from '../../store';
+import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../../headers';
+import { MISSING_ORG_ERROR, MISSING_REQUEST_ID_WARN } from '../resolveContext';
 
 const makeCtx = (headers: Record<string, string> = {}) => ({
     headers: { 'user-agent': 'agent/1', ...headers },
@@ -13,8 +13,8 @@ const makeCtx = (headers: Record<string, string> = {}) => ({
 });
 const makeLogger = () => ({ warn: vi.fn(), error: vi.fn() });
 const BOTH_HEADERS = {
-    [ORGANIZATION_ID_HEADER]: 'org-1',
-    [CORRELATION_ID_HEADER]: 'corr-1',
+    [ORG_ID_HEADER]: 'org-1',
+    [REQUEST_ID_HEADER]: 'corr-1',
 };
 
 beforeEach(() => _resetForTesting());
@@ -24,8 +24,8 @@ describe('createKoaMiddleware', () => {
         const logger = makeLogger();
         const next = vi.fn(() => {
             expect(getStore()).toEqual({
-                organizationId: 'org-1',
-                correlationId: 'corr-1',
+                orgId: 'org-1',
+                requestId: 'corr-1',
             });
             return Promise.resolve();
         });
@@ -42,7 +42,7 @@ describe('createKoaMiddleware', () => {
 
         await createKoaMiddleware()(makeCtx(BOTH_HEADERS), async () => {
             await new Promise((resolve) => setTimeout(resolve, 1));
-            order.push(`downstream ${getStore()?.organizationId ?? 'none'}`);
+            order.push(`downstream ${getStore()?.orgId ?? 'none'}`);
         });
         order.push('resolved');
 
@@ -57,31 +57,31 @@ describe('createKoaMiddleware', () => {
         ).rejects.toThrow('downstream failed');
     });
 
-    it('generates a correlation ID when the header is missing, and warns with the request details', async () => {
+    it('generates a request ID when the header is missing, and warns with the request details', async () => {
         const logger = makeLogger();
         const next = vi.fn(() => {
-            expect(getCorrelationId()).toMatch(/^[0-9a-f-]{36}$/);
+            expect(getRequestId()).toMatch(/^[0-9a-f-]{36}$/);
             return Promise.resolve();
         });
 
         await createKoaMiddleware({ logger })(
-            makeCtx({ [ORGANIZATION_ID_HEADER]: 'org-1' }),
+            makeCtx({ [ORG_ID_HEADER]: 'org-1' }),
             next,
         );
 
         expect(next).toHaveBeenCalledOnce();
-        expect(logger.warn).toHaveBeenCalledWith(MISSING_CORRELATION_WARN, {
+        expect(logger.warn).toHaveBeenCalledWith(MISSING_REQUEST_ID_WARN, {
             method: 'POST',
             path: '/orders',
-            organizationId: 'org-1',
-            correlationId: undefined,
+            orgId: 'org-1',
+            requestId: undefined,
             userAgent: 'agent/1',
         });
     });
 
-    it('rejects a request without an organization ID with 400, logging it and never calling next', async () => {
+    it('rejects a request without an org ID with 400, logging it and never calling next', async () => {
         const logger = makeLogger();
-        const ctx = makeCtx({ [CORRELATION_ID_HEADER]: 'corr-1' });
+        const ctx = makeCtx({ [REQUEST_ID_HEADER]: 'corr-1' });
         const next = vi.fn(() => Promise.resolve());
 
         await createKoaMiddleware({ logger })(ctx, next);
@@ -95,30 +95,30 @@ describe('createKoaMiddleware', () => {
             {
                 method: 'POST',
                 path: '/orders',
-                organizationId: undefined,
-                correlationId: 'corr-1',
+                orgId: undefined,
+                requestId: 'corr-1',
                 userAgent: 'agent/1',
             },
         );
         expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('also warns about a missing correlation ID when it rejects, so both problems are logged at once', async () => {
+    it('also warns about a missing request ID when it rejects, so both problems are logged at once', async () => {
         const logger = makeLogger();
 
         await createKoaMiddleware({ logger })(makeCtx(), () => Promise.resolve());
 
         expect(logger.warn).toHaveBeenCalledWith(
-            MISSING_CORRELATION_WARN,
+            MISSING_REQUEST_ID_WARN,
             expect.any(Object),
         );
         expect(logger.error).toHaveBeenCalledOnce();
     });
 
-    it('runs under the default organization in single-tenant mode, whatever the header says', async () => {
-        const ctx = makeCtx({ ...BOTH_HEADERS, [ORGANIZATION_ID_HEADER]: 'other-org' });
+    it('runs under the default org in single-tenant mode, whatever the header says', async () => {
+        const ctx = makeCtx({ ...BOTH_HEADERS, [ORG_ID_HEADER]: 'other-org' });
         const next = vi.fn(() => {
-            expect(getStore()?.organizationId).toBe('default-org');
+            expect(getStore()?.orgId).toBe('default-org');
             return Promise.resolve();
         });
 

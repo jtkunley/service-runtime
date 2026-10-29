@@ -1,8 +1,8 @@
 import type { IncomingHttpHeaders } from 'http';
-import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../headers';
+import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
 
-export const MISSING_ORG_ERROR = `Missing required header: ${ORGANIZATION_ID_HEADER}`;
-export const MISSING_CORRELATION_WARN = `Missing ${CORRELATION_ID_HEADER} header — generated a new one`;
+export const MISSING_ORG_ERROR = `Missing required header: ${ORG_ID_HEADER}`;
+export const MISSING_REQUEST_ID_WARN = `Missing ${REQUEST_ID_HEADER} header — generated a new one`;
 
 export interface MiddlewareLogger {
     warn(msg: string, data: Record<string, unknown>): void;
@@ -15,20 +15,20 @@ export interface MiddlewareOptions {
 }
 
 interface ContextBase {
-    organizationId: string | undefined;
-    correlationId: string | undefined;
+    orgId: string | undefined;
+    requestId: string | undefined;
 }
 
 export type ContextResult =
-    | (ContextBase & { type: 'ok'; organizationId: string })
+    | (ContextBase & { type: 'ok'; orgId: string })
     | (ContextBase & { type: 'error'; status: 400; error: string });
 
 export function resolveContext(
-    organizationId: string | undefined,
-    correlationId: string | undefined,
+    orgId: string | undefined,
+    requestId: string | undefined,
     opts: MiddlewareOptions,
 ): ContextResult {
-    const trimmedCorrelationId = correlationId?.trim() || undefined;
+    const trimmedRequestId = requestId?.trim() || undefined;
     const defaultOrgId = opts.getDefaultOrgId?.()?.trim() || undefined;
 
     if (defaultOrgId) {
@@ -38,12 +38,12 @@ export function resolveContext(
         // configured default regardless of what the caller says.
         return {
             type: 'ok',
-            organizationId: defaultOrgId,
-            correlationId: trimmedCorrelationId,
+            orgId: defaultOrgId,
+            requestId: trimmedRequestId,
         };
     }
 
-    const trimmedOrgId = organizationId?.trim() || undefined;
+    const trimmedOrgId = orgId?.trim() || undefined;
     // Multi-tenant: org ID must come from the caller — none means we cannot
     // determine which tenant this unit of work belongs to.
     if (!trimmedOrgId) {
@@ -51,15 +51,15 @@ export function resolveContext(
             type: 'error',
             status: 400,
             error: MISSING_ORG_ERROR,
-            organizationId: undefined,
-            correlationId: trimmedCorrelationId,
+            orgId: undefined,
+            requestId: trimmedRequestId,
         };
     }
 
     return {
         type: 'ok',
-        organizationId: trimmedOrgId,
-        correlationId: trimmedCorrelationId,
+        orgId: trimmedOrgId,
+        requestId: trimmedRequestId,
     };
 }
 
@@ -68,8 +68,8 @@ export function resolveRequestContext(
     opts: MiddlewareOptions,
 ): ContextResult {
     return resolveContext(
-        headers[ORGANIZATION_ID_HEADER] as string | undefined,
-        headers[CORRELATION_ID_HEADER] as string | undefined,
+        headers[ORG_ID_HEADER] as string | undefined,
+        headers[REQUEST_ID_HEADER] as string | undefined,
         opts,
     );
 }

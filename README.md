@@ -45,21 +45,21 @@ npm i service-runtime
 
 ## Request context
 
-Carries `organizationId` and `correlationId` through [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the lifetime of a request, message, or job. Any layer reads either value on demand — no parameter threading.
+Carries `orgId` and `requestId` through [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the lifetime of a request, message, or job. Any layer reads either value on demand — no parameter threading.
 
 ### Basic usage
 
 At a service boundary, call `run()` to establish the scope. Everything that runs inside the callback (including awaited async work) can read the context.
 
 ```ts
-import { run, getOrganizationId, getCorrelationId } from 'service-runtime';
+import { run, getOrgId, getRequestId } from 'service-runtime';
 
-await run({ organizationId: 'org-abc', correlationId: 'req-123' }, async () => {
-  await processRequest(); // getOrganizationId() returns 'org-abc' anywhere in the call stack
+await run({ orgId: 'org-abc', requestId: 'req-123' }, async () => {
+  await processRequest(); // getOrgId() returns 'org-abc' anywhere in the call stack
 });
 ```
 
-`correlationId` is optional — a UUID is generated automatically if omitted.
+`requestId` is optional — a UUID is generated automatically if omitted.
 
 ### Express middleware
 
@@ -77,7 +77,7 @@ app.use(createExpressMiddleware({
 }));
 ```
 
-Extracts `x-organization-id` and `correlation-id` from the request headers. Calls `run()` before invoking `next()`. Returns `400` if `organizationId` is absent and no `getDefaultOrgId` fallback is provided. When `logger` is supplied, a `warn` is emitted on every rejected request including the HTTP method and path.
+Extracts `x-org-id` and `x-request-id` from the request headers. Calls `run()` before invoking `next()`. Returns `400` if `orgId` is absent and no `getDefaultOrgId` fallback is provided. When `logger` is supplied, a `warn` is emitted on every rejected request including the HTTP method and path.
 
 ### Koa middleware
 
@@ -102,7 +102,7 @@ Same behaviour as the Express variant.
 ```ts
 import { run } from 'service-runtime';
 
-await run({ organizationId: process.env.ORG_ID! }, () => runJob());
+await run({ orgId: process.env.ORG_ID! }, () => runJob());
 ```
 
 ### Outgoing fetch
@@ -114,15 +114,15 @@ const fetch = createFetchWrapper();
 
 // Inside a context scope, both headers are injected automatically:
 const res = await fetch('https://downstream-service/api/resource');
-// x-organization-id and correlation-id injected from current context
+// x-org-id and x-request-id injected from current context
 ```
 
 Outside a context scope, the call passes through to `globalThis.fetch` unmodified.
 
-For third-party destinations, opt out of injecting the org id header. The correlation id is still sent for end-to-end tracing. Disabling an option only stops injection - headers the caller sets explicitly are sent as-is:
+For third-party destinations, opt out of injecting the org ID header. The request ID is still sent for end-to-end tracing. Disabling an option only stops injection - headers the caller sets explicitly are sent as-is:
 
 ```ts
-const externalFetch = createFetchWrapper({ organizationId: false });
+const externalFetch = createFetchWrapper({ orgId: false });
 ```
 
 ### Request context API
@@ -130,37 +130,37 @@ const externalFetch = createFetchWrapper({ organizationId: false });
 #### Constants
 
 ```ts
-export const ORGANIZATION_ID_HEADER = 'x-organization-id';
-export const CORRELATION_ID_HEADER = 'correlation-id';
+export const ORG_ID_HEADER = 'x-org-id';
+export const REQUEST_ID_HEADER = 'x-request-id';
 ```
 
 #### `run<T>(ctx, fn)`
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `ctx.organizationId` | `string` | Required. |
-| `ctx.correlationId` | `string` | Optional — UUID generated if absent. |
+| `ctx.orgId` | `string` | Required. |
+| `ctx.requestId` | `string` | Optional — UUID generated if absent. |
 | `fn` | `() => T` | Sync or async callback run within the context scope. |
 
 Returns whatever `fn` returns.
 
-#### `getOrganizationId()`
+#### `getOrgId()`
 
-Returns the current `organizationId`. Throws `Error('No request context')` if called outside a `run()` scope.
+Returns the current `orgId`. Throws `Error('No request context')` if called outside a `run()` scope.
 
-#### `getCorrelationId()`
+#### `getRequestId()`
 
-Returns the current `correlationId`. Throws `Error('No request context')` if called outside a `run()` scope.
+Returns the current `requestId`. Throws `Error('No request context')` if called outside a `run()` scope.
 
 #### `getStore()`
 
-Returns `{ organizationId, correlationId }` or `undefined` if called outside a scope. Use for conditional checks where throwing is undesirable.
+Returns `{ orgId, requestId }` or `undefined` if called outside a scope. Use for conditional checks where throwing is undesirable.
 
 #### `createExpressMiddleware(opts?)`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `getDefaultOrgId` | `() => string \| undefined` | — | Fallback when `x-organization-id` header is absent. Returns `400` if no org ID and no fallback. |
+| `getDefaultOrgId` | `() => string \| undefined` | — | Fallback when `x-org-id` header is absent. Returns `400` if no org ID and no fallback. |
 | `logger` | `{ warn(msg, data) }` | — | Optional. When provided, emits a `warn` with `{ method, path }` on every request rejected with `400`. Compatible with any `ChildLogger`. |
 
 #### `createKoaMiddleware(opts?)`
@@ -169,12 +169,12 @@ Same options as `createExpressMiddleware`.
 
 #### `createFetchWrapper(options?)`
 
-Returns a `fetch`-compatible function. When called inside a `run()` scope, it injects `x-organization-id` and `correlation-id` from the current context into every outbound request, merging with any headers the caller already set.
+Returns a `fetch`-compatible function. When called inside a `run()` scope, it injects `x-org-id` and `x-request-id` from the current context into every outbound request, merging with any headers the caller already set.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `organizationId` | `true` | Inject `x-organization-id`. Set `false` for third-party APIs. |
-| `correlationId` | `true` | Inject `correlation-id`. |
+| `orgId` | `true` | Inject `x-org-id`. Set `false` for third-party APIs. |
+| `requestId` | `true` | Inject `x-request-id`. |
 
 ---
 

@@ -1,19 +1,19 @@
 import { getStore } from './store';
-import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from './headers';
+import { ORG_ID_HEADER, REQUEST_ID_HEADER } from './headers';
 
 export interface FetchWrapperOptions {
-    organizationId?: boolean;
-    correlationId?: boolean;
+    orgId?: boolean;
+    requestId?: boolean;
 }
 
 export function createFetchWrapper(
     options: FetchWrapperOptions = {},
 ): typeof fetch {
-    const { organizationId = true, correlationId = true } = options;
+    const { orgId = true, requestId = true } = options;
 
     return (input, init) => {
         const store = getStore();
-        if (!store || (!organizationId && !correlationId)) {
+        if (!store || (!orgId && !requestId)) {
             return globalThis.fetch(input, init);
         }
 
@@ -21,11 +21,11 @@ export function createFetchWrapper(
             init?.headers ??
                 (input instanceof Request ? input.headers : undefined),
         );
-        if (organizationId) {
-            existing.set(ORGANIZATION_ID_HEADER, store.organizationId);
+        if (orgId) {
+            existing.set(ORG_ID_HEADER, store.orgId);
         }
-        if (correlationId) {
-            existing.set(CORRELATION_ID_HEADER, store.correlationId);
+        if (requestId) {
+            existing.set(REQUEST_ID_HEADER, store.requestId);
         }
 
         return globalThis.fetch(input, { ...init, headers: existing });

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
     run,
-    getOrganizationId,
-    getCorrelationId,
+    getOrgId,
+    getRequestId,
     getStore,
     _resetForTesting,
 } from '../store';
@@ -15,15 +15,15 @@ beforeEach(() => {
 
 describe('run', () => {
     it('returns what the function returns, a promise included', async () => {
-        expect(run({ organizationId: 'org-1' }, () => 42)).toBe(42);
+        expect(run({ orgId: 'org-1' }, () => 42)).toBe(42);
         await expect(
-            run({ organizationId: 'org-1' }, () => Promise.resolve('done')),
+            run({ orgId: 'org-1' }, () => Promise.resolve('done')),
         ).resolves.toBe('done');
     });
 
     it('lets an error from the function propagate and ends the context', () => {
         expect(() =>
-            run({ organizationId: 'org-1' }, () => {
+            run({ orgId: 'org-1' }, () => {
                 throw new Error('boom');
             }),
         ).toThrow('boom');
@@ -31,39 +31,39 @@ describe('run', () => {
     });
 
     it('trims both IDs', () => {
-        run({ organizationId: '  org-1  ', correlationId: '  corr-1  ' }, () => {
+        run({ orgId: '  org-1  ', requestId: '  corr-1  ' }, () => {
             expect(getStore()).toEqual({
-                organizationId: 'org-1',
-                correlationId: 'corr-1',
+                orgId: 'org-1',
+                requestId: 'corr-1',
             });
         });
     });
 
     it.each(['', '   '])(
-        'refuses an organizationId of %j before running the function',
-        (organizationId) => {
+        'refuses an orgId of %j before running the function',
+        (orgId) => {
             let ran = false;
             expect(() =>
-                run({ organizationId }, () => {
+                run({ orgId }, () => {
                     ran = true;
                 }),
-            ).toThrow('organizationId must not be empty');
+            ).toThrow('orgId must not be empty');
             expect(ran).toBe(false);
         },
     );
 
     it.each([undefined, '', '   '])(
-        'generates a UUID correlationId when given %j',
-        (correlationId) => {
-            run({ organizationId: 'org-1', correlationId }, () => {
-                expect(getCorrelationId()).toMatch(UUID);
+        'generates a UUID requestId when given %j',
+        (requestId) => {
+            run({ orgId: 'org-1', requestId }, () => {
+                expect(getRequestId()).toMatch(UUID);
             });
         },
     );
 
-    it('generates a different correlationId for each run', () => {
+    it('generates a different requestId for each run', () => {
         const ids = [1, 2].map(() =>
-            run({ organizationId: 'org-1' }, () => getCorrelationId()),
+            run({ orgId: 'org-1' }, () => getRequestId()),
         );
         expect(ids[0]).not.toBe(ids[1]);
     });
@@ -71,19 +71,19 @@ describe('run', () => {
 
 describe('context scope', () => {
     it('follows the work through awaits and timers', async () => {
-        await run({ organizationId: 'org-async' }, async () => {
+        await run({ orgId: 'org-async' }, async () => {
             await Promise.resolve();
             await new Promise((resolve) => setTimeout(resolve, 1));
-            expect(getOrganizationId()).toBe('org-async');
+            expect(getOrgId()).toBe('org-async');
         });
     });
 
     it('keeps concurrent runs apart', async () => {
         const seen = await Promise.all(
-            ['org-a', 'org-b'].map((organizationId, i) =>
-                run({ organizationId }, async () => {
+            ['org-a', 'org-b'].map((orgId, i) =>
+                run({ orgId }, async () => {
                     await new Promise((resolve) => setTimeout(resolve, 5 - i * 4));
-                    return getOrganizationId();
+                    return getOrgId();
                 }),
             ),
         );
@@ -91,14 +91,14 @@ describe('context scope', () => {
     });
 
     it('lets a nested run replace the context, and restores the outer one after it', () => {
-        run({ organizationId: 'outer', correlationId: 'corr-outer' }, () => {
-            run({ organizationId: 'inner', correlationId: 'corr-inner' }, () => {
+        run({ orgId: 'outer', requestId: 'corr-outer' }, () => {
+            run({ orgId: 'inner', requestId: 'corr-inner' }, () => {
                 expect(getStore()).toEqual({
-                    organizationId: 'inner',
-                    correlationId: 'corr-inner',
+                    orgId: 'inner',
+                    requestId: 'corr-inner',
                 });
             });
-            expect(getOrganizationId()).toBe('outer');
+            expect(getOrgId()).toBe('outer');
         });
     });
 });
@@ -108,8 +108,8 @@ describe('outside a context', () => {
         expect(getStore()).toBeUndefined();
     });
 
-    it('getOrganizationId and getCorrelationId throw', () => {
-        expect(() => getOrganizationId()).toThrow('No request context');
-        expect(() => getCorrelationId()).toThrow('No request context');
+    it('getOrgId and getRequestId throw', () => {
+        expect(() => getOrgId()).toThrow('No request context');
+        expect(() => getRequestId()).toThrow('No request context');
     });
 });

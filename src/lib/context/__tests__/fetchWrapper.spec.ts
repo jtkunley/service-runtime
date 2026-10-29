@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFetchWrapper } from '../fetchWrapper';
 import { run, _resetForTesting } from '../store';
-import { ORGANIZATION_ID_HEADER, CORRELATION_ID_HEADER } from '../headers';
+import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
 
 const URL_ = 'https://example.com/api';
-const CTX = { organizationId: 'ctx-org', correlationId: 'ctx-corr' };
+const CTX = { orgId: 'ctx-org', requestId: 'ctx-corr' };
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -45,8 +45,8 @@ describe('createFetchWrapper', () => {
 
     it('passes the call through untouched when both headers are turned off', async () => {
         const fetchWrapper = createFetchWrapper({
-            organizationId: false,
-            correlationId: false,
+            orgId: false,
+            requestId: false,
         });
         const init = { headers: { 'x-custom': 'value' } };
 
@@ -59,14 +59,14 @@ describe('createFetchWrapper', () => {
         await run(CTX, () =>
             createFetchWrapper()(URL_, {
                 headers: {
-                    [ORGANIZATION_ID_HEADER]: 'caller-org',
-                    [CORRELATION_ID_HEADER]: 'caller-corr',
+                    [ORG_ID_HEADER]: 'caller-org',
+                    [REQUEST_ID_HEADER]: 'caller-corr',
                 },
             }),
         );
 
-        expect(sentRequest().headers.get(ORGANIZATION_ID_HEADER)).toBe('ctx-org');
-        expect(sentRequest().headers.get(CORRELATION_ID_HEADER)).toBe('ctx-corr');
+        expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe('ctx-org');
+        expect(sentRequest().headers.get(REQUEST_ID_HEADER)).toBe('ctx-corr');
     });
 
     it('never changes the headers the caller passed in', async () => {
@@ -87,7 +87,7 @@ describe('createFetchWrapper', () => {
         const request = sentRequest();
         expect(request.method).toBe('POST');
         expect(await request.text()).toBe('payload');
-        expect(request.headers.get(ORGANIZATION_ID_HEADER)).toBe('ctx-org');
+        expect(request.headers.get(ORG_ID_HEADER)).toBe('ctx-org');
     });
 
     it('lets init.headers win over a Request input’s headers, like fetch itself', async () => {
@@ -104,14 +104,14 @@ describe('createFetchWrapper', () => {
     describe.each([
         { name: 'by default', options: {}, org: 'ctx-org', corr: 'ctx-corr' },
         {
-            name: 'with organizationId off',
-            options: { organizationId: false },
+            name: 'with orgId off',
+            options: { orgId: false },
             org: null,
             corr: 'ctx-corr',
         },
         {
-            name: 'with correlationId off',
-            options: { correlationId: false },
+            name: 'with requestId off',
+            options: { requestId: false },
             org: 'ctx-org',
             corr: null,
         },
@@ -132,8 +132,8 @@ describe('createFetchWrapper', () => {
                 await run(CTX, () => createFetchWrapper(options)(...args()));
 
                 const { headers } = sentRequest();
-                expect(headers.get(ORGANIZATION_ID_HEADER)).toBe(org);
-                expect(headers.get(CORRELATION_ID_HEADER)).toBe(corr);
+                expect(headers.get(ORG_ID_HEADER)).toBe(org);
+                expect(headers.get(REQUEST_ID_HEADER)).toBe(corr);
                 expect(headers.get('authorization')).toBe(
                     source === 'no init' ? null : 'Bearer t',
                 );
@@ -142,18 +142,18 @@ describe('createFetchWrapper', () => {
     });
 
     const callerOrgSources: [string, () => [string | URL | Request, RequestInit?]][] = [
-        ['an init.headers object', () => [URL_, { headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' } }]],
-        ['a Request', () => [new Request(URL_, { headers: { [ORGANIZATION_ID_HEADER]: 'caller-org' } })]],
+        ['an init.headers object', () => [URL_, { headers: { [ORG_ID_HEADER]: 'caller-org' } }]],
+        ['a Request', () => [new Request(URL_, { headers: { [ORG_ID_HEADER]: 'caller-org' } })]],
     ];
 
     it.each(callerOrgSources)(
-        'leaves a caller’s own organization header alone when organizationId is off, given %s',
+        'leaves a caller’s own org ID header alone when orgId is off, given %s',
         async (_source, args) => {
             await run(CTX, () =>
-                createFetchWrapper({ organizationId: false })(...args()),
+                createFetchWrapper({ orgId: false })(...args()),
             );
 
-            expect(sentRequest().headers.get(ORGANIZATION_ID_HEADER)).toBe(
+            expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe(
                 'caller-org',
             );
         },
