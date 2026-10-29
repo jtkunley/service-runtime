@@ -32,10 +32,14 @@ Requires Node.js 22 or later.
 
 ```bash
 npm install
-npm run check          # typecheck, lint and test
-npm run test:coverage  # tests with a v8 coverage report in coverage/
-npm run build          # compile the publishable package into dist/
+npm run check           # typecheck, lint and test
+npm run test:unit       # unit tests, next to the source in src/
+npm run test:component  # component tests in test/component/
+npm run test:coverage   # tests with a v8 coverage report in coverage/
+npm run build           # compile the publishable package into dist/
 ```
+
+The component tests build the package as it is published, install it beside a small Express service in `test/component/fixtures/`, and run that service as a real process: real requests, real signals, real exit codes. The fixture is TypeScript run directly by Node, which needs Node.js 22.18 or later.
 
 ## Install
 

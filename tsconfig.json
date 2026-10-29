@@ -14,7 +14,12 @@
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
-        "noEmit": true
+        "noEmit": true,
+        "paths": {
+            "service-runtime": ["./src/index.ts"],
+            "service-runtime/cron": ["./src/lib/cron/cron.ts"],
+            "service-runtime/tier": ["./src/lib/tier/tier.ts"]
+        }
     },
-    "include": ["src", "vitest.config.mts"]
+    "include": ["src", "test", "vitest.config.mts"]
 }

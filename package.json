@@ -7,6 +7,8 @@
         "typecheck": "tsc",
         "lint": "eslint .",
         "test": "vitest run",
+        "test:unit": "vitest run --project unit",
+        "test:component": "vitest run --project component",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "check": "npm run typecheck && npm run lint && npm test"

@@ -25,7 +25,7 @@ export default defineConfig(
         },
     },
     {
-        files: ['src/**/__tests__/**', 'src/**/*.spec.ts', 'src/**/*.test.ts'],
+        files: ['src/**/__tests__/**', 'src/**/*.spec.ts', 'src/**/*.test.ts', 'test/**'],
         rules: {
             // `expect(mock.method)` and untyped `mock.calls` trip these on every assertion.
             '@typescript-eslint/unbound-method': 'off',

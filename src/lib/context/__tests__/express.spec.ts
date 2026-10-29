@@ -3,7 +3,6 @@ import type { AddressInfo } from 'net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createExpressMiddleware } from '../express';
-import { createFetchWrapper } from '../fetchWrapper';
 import { getStore } from '../store';
 import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
 
@@ -147,25 +146,4 @@ describe('createExpressMiddleware in a real Express app', () => {
         expect(await res.json()).toMatchObject({ orgId: 'default-org' });
     });
 
-    it('threads both IDs on to the next service through createFetchWrapper', async () => {
-        const next = express();
-        next.get('/headers', (req, res) => {
-            res.json({ orgId: req.get(ORG_ID_HEADER), requestId: req.get(REQUEST_ID_HEADER) });
-        });
-        const nextUrl = await serve(next);
-        const wrappedFetch = createFetchWrapper();
-        const app = express();
-        app.use(createExpressMiddleware());
-        app.get('/call-next', async (_req, res) => {
-            const downstream = await wrappedFetch(`${nextUrl}/headers`);
-            res.json(await downstream.json());
-        });
-        const url = await serve(app);
-
-        const res = await fetch(`${url}/call-next`, {
-            headers: { [ORG_ID_HEADER]: 'org-1', [REQUEST_ID_HEADER]: 'req-1' },
-        });
-
-        expect(await res.json()).toEqual({ orgId: 'org-1', requestId: 'req-1' });
-    });
 });
