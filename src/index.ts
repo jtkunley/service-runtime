@@ -20,7 +20,6 @@ export {
 } from './lib/context/configureContext';
 export type { ContextMiddlewareOptions } from './lib/middleware/resolveContext';
 export { createExpressMiddleware } from './lib/middleware/express';
-export { createKoaMiddleware } from './lib/middleware/koa';
 export { createFetchWrapper, type FetchWrapperOptions } from './lib/fetch/fetchWrapper';
 
 export {

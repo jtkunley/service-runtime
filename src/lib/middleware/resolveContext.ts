@@ -20,7 +20,7 @@ export interface HttpRequest {
 
 export type ResolvedContext = { enter<T>(fn: () => T): T } | { error: string };
 
-/** The part of the Express and Koa middleware that does not depend on the framework. */
+/** The part of the middleware that does not depend on the framework, so another adapter is a few lines. */
 export function resolveContext<C extends ContextConfig>(
     context: Context<C>,
     { headers, method, path }: HttpRequest,
