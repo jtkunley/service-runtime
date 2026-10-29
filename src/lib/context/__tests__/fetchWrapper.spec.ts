@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFetchWrapper } from '../fetchWrapper';
-import { run, _resetForTesting } from '../store';
+import { run } from '../store';
 import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../headers';
 
 const URL_ = 'https://example.com/api';
@@ -9,7 +9,6 @@ const CTX = { orgId: 'ctx-org', requestId: 'ctx-corr' };
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-    _resetForTesting();
     fetchMock = vi.fn().mockResolvedValue(new Response('ok'));
     vi.stubGlobal('fetch', fetchMock);
 });

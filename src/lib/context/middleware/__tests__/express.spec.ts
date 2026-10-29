@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createExpressMiddleware } from '../express';
-import { getStore, getRequestId, _resetForTesting } from '../../store';
+import { getStore, getRequestId } from '../../store';
 import { ORG_ID_HEADER, REQUEST_ID_HEADER } from '../../headers';
 import { MISSING_ORG_ERROR, MISSING_REQUEST_ID_WARN } from '../resolveContext';
 
@@ -19,8 +19,6 @@ const BOTH_HEADERS = {
     [ORG_ID_HEADER]: 'org-1',
     [REQUEST_ID_HEADER]: 'corr-1',
 };
-
-beforeEach(() => _resetForTesting());
 
 describe('createExpressMiddleware', () => {
     it('runs next inside a context built from the request headers, logging nothing', () => {

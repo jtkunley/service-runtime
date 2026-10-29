@@ -1,17 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-    run,
-    getOrgId,
-    getRequestId,
-    getStore,
-    _resetForTesting,
-} from '../store';
+import { describe, it, expect } from 'vitest';
+import { run, getOrgId, getRequestId, getStore, normalizeId } from '../store';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-beforeEach(() => {
-    _resetForTesting();
-});
 
 describe('run', () => {
     it('returns what the function returns, a promise included', async () => {
@@ -100,6 +90,29 @@ describe('context scope', () => {
             });
             expect(getOrgId()).toBe('outer');
         });
+    });
+});
+
+describe('getStore', () => {
+    it('hands out a context that cannot be changed, so no caller can switch the tenant mid-request', () => {
+        run({ orgId: 'org-1' }, () => {
+            const context = getStore() as { orgId: string };
+
+            expect(() => {
+                context.orgId = 'other-org';
+            }).toThrow(TypeError);
+            expect(getOrgId()).toBe('org-1');
+        });
+    });
+});
+
+describe('normalizeId', () => {
+    it('trims an ID', () => {
+        expect(normalizeId('  id-1 ')).toBe('id-1');
+    });
+
+    it.each([undefined, '', ' \t\n'])('treats %j as absent', (id) => {
+        expect(normalizeId(id)).toBeUndefined();
     });
 });
 

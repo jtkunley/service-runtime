@@ -1,43 +1,46 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 
-type Store = { orgId: string; requestId: string };
+export interface RequestContext {
+    readonly orgId: string;
+    readonly requestId: string;
+}
 
-let _als = new AsyncLocalStorage<Store>();
+const storage = new AsyncLocalStorage<RequestContext>();
 
-export function _resetForTesting(): void {
-    _als = new AsyncLocalStorage<Store>();
+/** A blank ID counts as absent, so a header sent empty is treated as not sent. */
+export function normalizeId(id: string | undefined): string | undefined {
+    return id?.trim() || undefined;
 }
 
 export function run<T>(
     ctx: { orgId: string; requestId?: string },
     fn: () => T,
 ): T {
-    const orgId = ctx.orgId.trim();
+    const orgId = normalizeId(ctx.orgId);
     // Fail loud at the boundary — an empty org ID would silently scope all
     // downstream data access to nothing or the wrong tenant.
     if (!orgId) throw new Error('orgId must not be empty');
 
-    const store: Store = {
+    const context: RequestContext = Object.freeze({
         orgId,
-        // Use || not ?? — treats empty/blank string as absent (e.g. header present but whitespace).
-        requestId: ctx.requestId?.trim() || randomUUID(),
-    };
-    return _als.run(store, fn);
+        requestId: normalizeId(ctx.requestId) ?? randomUUID(),
+    });
+    return storage.run(context, fn);
 }
 
-export function getStore(): Store | undefined {
-    return _als.getStore();
+export function getStore(): RequestContext | undefined {
+    return storage.getStore();
 }
 
 export function getOrgId(): string {
-    const store = _als.getStore();
-    if (!store) throw new Error('No request context');
-    return store.orgId;
+    const context = storage.getStore();
+    if (!context) throw new Error('No request context');
+    return context.orgId;
 }
 
 export function getRequestId(): string {
-    const store = _als.getStore();
-    if (!store) throw new Error('No request context');
-    return store.requestId;
+    const context = storage.getStore();
+    if (!context) throw new Error('No request context');
+    return context.requestId;
 }

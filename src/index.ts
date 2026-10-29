@@ -17,6 +17,7 @@ export {
     getOrgId,
     getRequestId,
     getStore,
+    type RequestContext,
 } from './lib/context/store';
 export {
     ORG_ID_HEADER,

@@ -154,7 +154,9 @@ Returns the current `requestId`. Throws `Error('No request context')` if called 
 
 #### `getStore()`
 
-Returns `{ orgId, requestId }` or `undefined` if called outside a scope. Use for conditional checks where throwing is undesirable.
+Returns the current `RequestContext`, `{ orgId, requestId }`, or `undefined` if called outside a scope. Use for conditional checks where throwing is undesirable. The context is frozen, so no code can switch the tenant partway through a request.
+
+IDs are trimmed, and a blank ID counts as absent: a blank `orgId` throws, and a blank `requestId` is replaced with a UUID.
 
 #### `createExpressMiddleware(opts?)`
 
