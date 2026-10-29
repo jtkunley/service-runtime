@@ -18,10 +18,10 @@ export {
     type ContextSource,
     type ContextValues,
 } from './lib/context/configureContext';
-export type { ContextMiddlewareOptions } from './lib/context/resolveContext';
-export { createExpressMiddleware } from './lib/context/express';
-export { createKoaMiddleware } from './lib/context/koa';
-export { createFetchWrapper, type FetchWrapperOptions } from './lib/context/fetchWrapper';
+export type { ContextMiddlewareOptions } from './lib/context/middleware/resolveContext';
+export { createExpressMiddleware } from './lib/context/middleware/express';
+export { createKoaMiddleware } from './lib/context/middleware/koa';
+export { createFetchWrapper, type FetchWrapperOptions } from './lib/fetch/fetchWrapper';
 
 export {
     getTier,

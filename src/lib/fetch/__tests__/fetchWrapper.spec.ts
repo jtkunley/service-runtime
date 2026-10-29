@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureContext } from '../configureContext';
+import { configureContext } from '../../context/configureContext';
 import { createFetchWrapper, type FetchWrapperOptions } from '../fetchWrapper';
 
 const URL_ = 'https://example.com/api';

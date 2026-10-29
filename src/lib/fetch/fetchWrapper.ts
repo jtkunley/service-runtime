@@ -1,4 +1,4 @@
-import { contextInternals, type Context, type ContextConfig } from './configureContext';
+import { contextInternals, type Context, type ContextConfig } from '../context/configureContext';
 
 export interface FetchWrapperOptions {
     /** `'external'` forwards only entries marked `to: 'all'`, for third-party APIs. Default `'internal'`. */

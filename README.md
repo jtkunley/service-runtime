@@ -445,14 +445,16 @@ npm run build           # compile the publishable package into dist/
 
 ```
 src/
-  index.ts              the root entry point
-  lib/context/          request context, Express and Koa middleware, fetch wrapper
-  lib/lifecycle/        graceful shutdown, shutdown state, fatal error handlers
-  lib/cron/             createCron, the /cron entry point
-  lib/tier/             deployment tier checks, the /tier entry point
-  lib/shared/           logger types and error helpers
-  **/__tests__/         unit tests, one spec per source file
-test/component/         component tests against the built package
+  index.ts                 the root entry point
+  lib/context/             configureContext, the request context itself
+  lib/context/middleware/  Express and Koa middleware that fill the context
+  lib/fetch/               fetch wrapper that forwards context values downstream
+  lib/lifecycle/           graceful shutdown, shutdown state, fatal error handlers
+  lib/cron/                createCron, the /cron entry point
+  lib/tier/                deployment tier checks, the /tier entry point
+  lib/shared/              logger types and error helpers
+  **/__tests__/            unit tests, one spec per source file
+test/component/            component tests against the built package
 ```
 
 Each source file has its unit spec beside it in `__tests__`, named after it. The component tests build the package as it is published, install it beside a small Express service in [`test/component/fixtures/`](test/component/fixtures/), and run that service as a separate process.
