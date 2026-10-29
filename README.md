@@ -36,7 +36,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 
 ## Design decisions
 
-- **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required, forwarded and logged. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Third-party APIs only receive the values marked for every destination.
+- **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required and where it's forwarded. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Third-party APIs only receive the values marked for every destination.
 - **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short.
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the fatal handlers log and exit `1` without attempting a graceful shutdown, and leave the restart to the orchestrator.
 - **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
@@ -78,12 +78,10 @@ const context = configureContext({
     value: (req) => req.headers['x-tenant-id'],
     required: true,
     forward: { header: 'x-tenant-id', to: 'internal' },
-    log: true,
   },
   requestId: {
     value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
     forward: { header: 'x-request-id', to: 'all' },
-    log: true,
   },
 });
 const state = createShutdownState();
@@ -122,13 +120,11 @@ export const context = configureContext({
     value: (req) => req.headers['x-tenant-id'],
     required: true,
     forward: { header: 'x-tenant-id', to: 'internal' },
-    log: true,
   },
   // Request threading: one ID across every service a request touches, so its logs join up.
   requestId: {
     value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
     forward: { header: 'x-request-id', to: 'all' },
-    log: true,
   },
 });
 ```
@@ -138,7 +134,6 @@ export const context = configureContext({
 | `value` | `(req) => string \| undefined`, called once at the start of each request with its headers (lower-cased names), method and path. The result is trimmed, and a blank one counts as absent. |
 | `required` | Without a value, the middleware answers `400` and `run()` throws. |
 | `forward` | `{ header, to }`: the fetch wrapper sends the value as `header`, to internal destinations only (`'internal'`) or to every destination (`'all'`). Without it, the value never leaves the service. |
-| `log` | Include the value in `getLogData()` and in the middleware's log lines. |
 
 A single-tenant service names its one tenant instead of reading the header, `value: () => process.env.TENANT_ID`, so no caller can route a request to another tenant.
 
@@ -150,10 +145,24 @@ A header is only as trustworthy as whatever sets it. Read the tenant from a head
 context.get('tenantId');  // string: a required entry always has a value
 context.get('requestId'); // string | undefined
 context.getStore();       // { tenantId, requestId }, frozen, or undefined outside a request
-context.getLogData();     // { tenantId, requestId }: the entries marked log, to add to log lines
 ```
 
 `get` accepts only configured names, and its return type follows the entry's `required` attribute. The values are frozen, so nothing can switch the tenant partway through a request.
+
+### Logging the values
+
+Adding the values to log lines is the logger's job, not this package's. With [`@jtkunley/logger`](https://github.com/jtkunley/logger), each value is a resolver run on every line, so everything logged inside a request carries them, including this package's own lines:
+
+```ts
+import { logger } from '@jtkunley/logger';
+
+logger.configureContext({
+  tenantId: () => context.getStore()?.tenantId,
+  requestId: () => context.getStore()?.requestId,
+});
+```
+
+The package's own log lines therefore carry only what the logger can't know: a rejected request's method, path and missing entries, a cron job's name, a shutdown's signal.
 
 ### Express middleware
 
@@ -167,7 +176,7 @@ const app = express();
 app.use(createExpressMiddleware(context, { logger: rootLogger.child('http', 'request') }));
 ```
 
-Works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`. With a `logger`, the rejection is logged as an `error` with the method, full path, user agent, the names of the missing entries, and the values marked `log` that it did have.
+Works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`. With a `logger`, the rejection is logged as an `error` with the method, full path and the names of the missing entries. The request never entered a context, so this is everything the logger has to go on.
 
 ### Koa middleware
 
@@ -215,7 +224,6 @@ Takes an object of named `ContextEntry` values and returns a `Context`. Each cal
 | `run(source, fn)` | Works out the values from `source`, `{ headers, method?, path? }`, and runs `fn` inside the context, returning what it returns. Throws if a required value is missing. |
 | `get(name)` | The value of one entry. Throws `Error('No request context')` outside a request. |
 | `getStore()` | Every value, frozen, or `undefined` outside a request. |
-| `getLogData()` | The values of the entries marked `log`; empty outside a request. |
 
 #### `createExpressMiddleware(context, opts?)` and `createKoaMiddleware(context, opts?)`
 
@@ -392,7 +400,7 @@ const job = createCron({
 
 ### Running in the request context
 
-Pass the `context` and each tick runs inside it, its values worked out from `source`, just as a request's are worked out from its headers. The job can read them and call downstream services through the fetch wrapper, and a failed run is logged with the values marked `log`, so the failure line carries the tick's request ID.
+Pass the `context` and each tick runs inside it, its values worked out from `source`, just as a request's are worked out from its headers. The job can read them and call downstream services through the fetch wrapper. A failed run is logged from inside the tick's context, so a logger that injects the values, as above, adds the tick's request ID to the failure line.
 
 ```ts
 const job = createCron({
@@ -443,7 +451,7 @@ Returns a `CronController`. The `node-cron` task is created stopped, named after
 | `onError` | `(error: unknown) => void` | No | — | Optional hook when `run()` throws or rejects (e.g. error reporting, metrics). |
 | `allowOverlap` | `boolean` | No | `false` | If `false`, a tick is skipped while the prior `run()` is still running (`warn` logged). |
 | `waitForCompletionOnStop` | `boolean` | No | `true` | If `true`, `stop()` awaits pending `run()` invocations. |
-| `context` | `Context` | No | — | Runs each tick inside this context, and logs a failed run with its values marked `log`. |
+| `context` | `Context` | No | — | Runs each tick inside this context, failure log included. |
 | `source` | `() => ContextSource` | No | no headers | Where each tick's values come from, `{ headers }`, as for `context.run()`. |
 
 #### `CronController`
