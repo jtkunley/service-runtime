@@ -104,9 +104,12 @@ if (cronRunMs) {
         name: 'heartbeat',
         schedule: '* * * * * *',
         logger: log,
+        context,
+        source: () => ({ headers: { 'x-tenant-id': 'tenant-cron' } }),
         run: async () => {
-            log.info('Heartbeat started', {});
+            log.info('Heartbeat started', context.getLogData());
             await sleep(Number(cronRunMs));
+            if (env['CRON_FAIL']) throw new Error('heartbeat failed');
             log.info('Heartbeat finished', {});
         },
     });

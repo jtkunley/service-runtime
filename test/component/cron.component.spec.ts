@@ -12,6 +12,21 @@ describe('a cron job in a running service', () => {
         expect(service.messages()).toContain('Cron "heartbeat" started');
     });
 
+    it('runs each tick in its own context, and logs a failed tick with its values', async () => {
+        const service = await startService({ CRON_RUN_MS: '10', CRON_FAIL: '1' });
+
+        const started = await service.waitForLog('Heartbeat started');
+        const failed = await service.waitForLog('Cron "heartbeat" run failed');
+
+        expect(started).toMatchObject({ tenantId: 'tenant-cron', requestId: expect.any(String) });
+        expect(failed).toMatchObject({
+            level: 'error',
+            error: 'heartbeat failed',
+            tenantId: 'tenant-cron',
+            requestId: started['requestId'],
+        });
+    });
+
     it('is stopped by a shutdown cleanup that waits for the run in progress', async () => {
         const service = await startService({ CRON_RUN_MS: '1500' });
         await service.waitForLog('Heartbeat started');
