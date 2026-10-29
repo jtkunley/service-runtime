@@ -196,26 +196,28 @@ describe('configureService', () => {
     describe('listen', () => {
         it('registers the fatal handlers, then starts the server and hands it, with the cleanups and the shutdown state, to graceful shutdown', async () => {
             const logger = createMockRootLogger();
-            const service = configure(logger);
-            const first = vi.fn();
+            const cleanups = [vi.fn(), vi.fn()];
+            const service = configureService({
+                logger,
+                context: CONTEXT,
+                destinations: DESTINATIONS,
+                cleanups,
+            });
             const onShutdownStart = vi.fn();
-            service.onShutdown(first);
 
             const { url } = await listen(service, undefined, {
                 forceExitMs: 5_000,
                 onShutdownStart,
             });
-            const later = vi.fn();
-            service.onShutdown(later);
 
             expect(mocks.registerFatalHandlers).toHaveBeenCalledWith(logger);
             expect(mocks.registerFatalHandlers.mock.invocationCallOrder[0]).toBeLessThan(
                 mocks.setupGracefulShutdown.mock.invocationCallOrder[0]!,
             );
-            const [server, shutdownLogger, cleanups, options] = shutdownCall();
+            const [server, shutdownLogger, handedOver, options] = shutdownCall();
             expect(server.listening).toBe(true);
             expect(shutdownLogger).toBe(logger);
-            expect(cleanups).toEqual([first, later]);
+            expect(handedOver).toEqual(cleanups);
             expect(options).toMatchObject({ forceExitMs: 5_000, onShutdownStart });
             expect(await (await fetch(`${url}/orders`)).text()).toBe('app');
         });

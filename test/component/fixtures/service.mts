@@ -54,6 +54,18 @@ const service = configureService({
         // A third party: it never learns which tenant is calling.
         payments: ['requestId'],
     },
+    cleanups: [
+        ...(env['FAIL_CLEANUP']
+            ? [
+                  function flushQueue() {
+                      throw new Error('queue unreachable');
+                  },
+              ]
+            : []),
+        function closeDatabase() {
+            log.info('Database closed', {});
+        },
+    ],
 });
 
 type Destination = Parameters<typeof service.context.getHeaders>[0];
@@ -102,15 +114,6 @@ app.get('/throw', (_req, res) => {
 app.get('/reject', (_req, res) => {
     void Promise.reject(new Error('rejected with no handler'));
     res.sendStatus(202);
-});
-
-if (env['FAIL_CLEANUP']) {
-    service.onShutdown(function flushQueue() {
-        throw new Error('queue unreachable');
-    });
-}
-service.onShutdown(function closeDatabase() {
-    log.info('Database closed', {});
 });
 
 const { port } = await service.listen(app, {

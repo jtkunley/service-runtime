@@ -194,9 +194,13 @@ await queue.publish(payload, { headers: service.context.getHeaders('platform') }
 ## Starting and stopping
 
 ```ts
-service.onShutdown(() => queueConsumer.close());
-service.onShutdown(() => db.end());
+// service.ts
+export const service = configureService({
+  logger: rootLogger,
+  cleanups: [() => queueConsumer.close(), () => db.end()],
+});
 
+// main.ts
 const { port } = await service.listen(app, {
   port: 3000,
   onShutdownStart: () => new Promise((resolve) => setTimeout(resolve, 10_000)),
@@ -205,7 +209,7 @@ const { port } = await service.listen(app, {
 
 `listen` takes the app, an Express app or any Node request listener, starts the server, and sets up the probes and graceful shutdown. It resolves with the bound address once the server is listening.
 
-Register cleanups with `onShutdown` where the resource is opened; they run in the order registered, sync or async. Register what produces work first (e.g. a message queue consumer), then shared clients (e.g. Redis, the database).
+`cleanups`, each a `CleanupFn`, `() => void | Promise<void>`, run in order once the server has closed. List what produces work first (e.g. a message queue consumer), then shared clients (e.g. Redis, the database). Each is called only at shutdown, so it can close a resource opened after the service is configured.
 
 ### Health probes
 
@@ -223,7 +227,7 @@ On the first SIGTERM or SIGINT, the service:
 1. Starts failing readiness
 2. Runs `onShutdownStart`, if given, and waits for it (e.g. for the load balancer to stop routing to the pod)
 3. Stops the server accepting connections and waits for open requests to finish, closing keep-alive connections as they go idle
-4. Runs the cleanups one after another, in the order registered
+4. Runs the cleanups one after another, in order
 5. Exits with code 0, or 1 if any step failed
 
 The whole shutdown never takes longer than `forceExitMs` (30 seconds by default); at the deadline the process exits with code 1. A step that fails is logged and the next one still runs. A repeated signal is logged and ignored, so it can't end the process in the middle of cleanup. Shutdown logs use the child logger `server` / `shutdown`; every line carries `{ signal }`, and a failed cleanup's line also carries `cleanup`, its function name or its position such as `#2`.
@@ -236,7 +240,7 @@ From the moment `listen` is called, an `uncaughtException` or `unhandledRejectio
 
 ## API
 
-### `configureService({ logger, context?, destinations? })`
+### `configureService({ logger, context?, destinations?, cleanups? })`
 
 Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context.
 
@@ -247,7 +251,6 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 | `context.getStore()` | Every value, frozen, or `undefined` outside a request. |
 | `context.run(source, fn)` | Works out the values from `source`, `{ headers, method?, path? }`, and runs `fn` inside the context, returning what it returns. Throws if a required value is missing. |
 | `context.getHeaders(destination)` | The headers for a call to a declared destination; `{}` outside a request. Throws for an undeclared one. |
-| `onShutdown(cleanup)` | Adds a `CleanupFn`, `() => void \| Promise<void>`, to run on shutdown. |
 | `isShuttingDown()` | Whether shutdown has started. |
 | `listen(app, options)` | Registers the fatal error handlers and starts the server; resolves with its `AddressInfo`. One service per process listens; a second call rejects. |
 
@@ -271,7 +274,7 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 ## Related packages
 
 - [`@jtkunley/logger`](https://github.com/jtkunley/logger): structured JSON logging on pino, whose root logger fits the `RootLogger` interface, `flush()` included, and whose context injection adds the request's values to every line.
-- [`@jtkunley/cron`](https://github.com/jtkunley/cron): scheduled jobs that skip overlapping runs and stop cleanly. Run each tick in the request context with `runInContext: (tick) => service.context.run({ headers: { 'x-tenant-id': tenantId } }, tick)`, and stop it with `service.onShutdown(() => job.stop())`.
+- [`@jtkunley/cron`](https://github.com/jtkunley/cron): scheduled jobs that skip overlapping runs and stop cleanly. Run each tick in the request context with `runInContext: (tick) => service.context.run({ headers: { 'x-tenant-id': tenantId } }, tick)`, and stop it with a cleanup, `cleanups: [() => job.stop()]`.
 
 ## Development
 

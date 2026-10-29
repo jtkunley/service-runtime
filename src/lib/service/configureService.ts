@@ -29,6 +29,12 @@ export interface ServiceOptions<C extends ContextConfig, D extends Destinations>
     context?: C & NoUnknownAttributes<C>;
     /** Each destination the service calls, listing the entries whose headers it receives. */
     destinations?: D & ValidDestinations<C, D>;
+    /**
+     * Run in order on shutdown, after the server has closed: what produces work
+     * first, then the clients it uses. Each is called only then, so it may close
+     * a resource opened after the service is configured.
+     */
+    cleanups?: readonly CleanupFn[];
 }
 
 export interface ListenOptions {
@@ -67,8 +73,6 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
     /** Express middleware that fills the context, answering `400` for a request missing a required value. */
     readonly middleware: ReturnType<typeof createExpressMiddleware>;
     readonly isShuttingDown: () => boolean;
-    /** Cleanups run in the order registered, after the server has closed. */
-    readonly onShutdown: (cleanup: CleanupFn) => void;
     /**
      * Registers the fatal error handlers, then starts the server with graceful
      * shutdown. Resolves with the bound address. One service per process listens.
@@ -101,7 +105,7 @@ export function configureService<
         options.destinations ?? ({} as D & ValidDestinations<C, D>),
     );
     const state = createShutdownState();
-    const cleanups: CleanupFn[] = [];
+    const cleanups = [...(options.cleanups ?? [])];
 
     const listen = async (app: RequestListener, listenOptions: ListenOptions) => {
         const {
@@ -163,9 +167,6 @@ export function configureService<
         context: { run, get, getStore, getHeaders },
         middleware: createExpressMiddleware(context, logger.child('server', 'context')),
         isShuttingDown: state.isShuttingDown,
-        onShutdown: (cleanup) => {
-            cleanups.push(cleanup);
-        },
         listen,
     };
 }
