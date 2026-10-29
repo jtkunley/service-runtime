@@ -28,6 +28,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 - [Scheduled jobs (`createCron`)](#scheduled-jobs-createcron)
   - [Basic usage](#basic-usage)
   - [Logger, overlap, and error hook](#logger-overlap-and-error-hook)
+  - [Running in the request context](#running-in-the-request-context)
   - [Stopping with graceful shutdown](#stopping-with-graceful-shutdown)
   - [API](#scheduled-jobs-api)
 - [Development](#development)
@@ -389,6 +390,31 @@ const job = createCron({
 });
 ```
 
+### Running in the request context
+
+Pass the `context` and each tick runs inside it, its values worked out from `source`, just as a request's are worked out from its headers. The job can read them and call downstream services through the fetch wrapper, and a failed run is logged with the values marked `log`, so the failure line carries the tick's request ID.
+
+```ts
+const job = createCron({
+  name: 'reconcile',
+  schedule: '*/5 * * * *',
+  context,
+  source: () => ({ headers: { 'x-tenant-id': process.env.TENANT_ID } }),
+  run: reconcile, // context.get('tenantId') and context.get('requestId') work in here
+  logger: childLogger,
+});
+```
+
+A tick missing a required value never calls `run()`; it is logged and reported to `onError` like a failed run, and later ticks still run. A job that works through every tenant in turn should leave `context` out and open one context per tenant itself:
+
+```ts
+run: async () => {
+  for (const tenantId of await listTenants()) {
+    await context.run({ headers: { 'x-tenant-id': tenantId } }, () => syncTenant());
+  }
+},
+```
+
 ### Stopping with graceful shutdown
 
 Add `job.stop()` as a cleanup so the scheduler stops when the process receives SIGTERM:
@@ -417,6 +443,8 @@ Returns a `CronController`. The `node-cron` task is created stopped, named after
 | `onError` | `(error: unknown) => void` | No | — | Optional hook when `run()` throws or rejects (e.g. error reporting, metrics). |
 | `allowOverlap` | `boolean` | No | `false` | If `false`, a tick is skipped while the prior `run()` is still running (`warn` logged). |
 | `waitForCompletionOnStop` | `boolean` | No | `true` | If `true`, `stop()` awaits pending `run()` invocations. |
+| `context` | `Context` | No | — | Runs each tick inside this context, and logs a failed run with its values marked `log`. |
+| `source` | `() => ContextSource` | No | no headers | Where each tick's values come from, `{ headers }`, as for `context.run()`. |
 
 #### `CronController`
 
