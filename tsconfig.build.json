@@ -6,7 +6,8 @@
         "outDir": "dist/src",
         "types": ["node"],
         "declaration": true,
-        "sourceMap": true
+        "sourceMap": true,
+        "inlineSources": true
     },
     "include": ["src"],
     "exclude": ["src/**/__tests__/**", "src/**/*.spec.ts", "src/**/*.test.ts"]

@@ -16,9 +16,9 @@
         "skipLibCheck": true,
         "noEmit": true,
         "paths": {
-            "service-runtime": ["./src/index.ts"],
-            "service-runtime/cron": ["./src/lib/cron/cron.ts"],
-            "service-runtime/tier": ["./src/lib/tier/tier.ts"]
+            "@jtkunley/service-runtime": ["./src/index.ts"],
+            "@jtkunley/service-runtime/cron": ["./src/lib/cron/cron.ts"],
+            "@jtkunley/service-runtime/tier": ["./src/lib/tier/tier.ts"]
         }
     },
     "include": ["src", "test", "vitest.config.mts"]

@@ -10,9 +10,9 @@ import {
     setupGracefulShutdown,
     type CleanupFn,
     type RootLogger,
-} from 'service-runtime';
-import { createCron } from 'service-runtime/cron';
-import { getTier, isNonProdTier, isProdTier } from 'service-runtime/tier';
+} from '@jtkunley/service-runtime';
+import { createCron } from '@jtkunley/service-runtime/cron';
+import { getTier, isNonProdTier, isProdTier } from '@jtkunley/service-runtime/tier';
 
 const env = process.env;
 const defaultOrgId = env['DEFAULT_ORG_ID'];

@@ -1,4 +1,4 @@
-# service-runtime
+# @jtkunley/service-runtime
 
 Utilities for Node.js HTTP servers: **request context** via `AsyncLocalStorage`, the **deployment tier**, **graceful shutdown**, and **`createCron`** for scheduled work.
 
@@ -44,7 +44,7 @@ The component tests build the package as it is published, install it beside a sm
 ## Install
 
 ```bash
-npm i service-runtime
+npm i @jtkunley/service-runtime
 ```
 
 ## Request context
@@ -56,7 +56,7 @@ Carries `orgId` and `requestId` through [`AsyncLocalStorage`](https://nodejs.org
 At a service boundary, call `run()` to establish the scope. Everything that runs inside the callback (including awaited async work) can read the context.
 
 ```ts
-import { run, getOrgId, getRequestId } from 'service-runtime';
+import { run, getOrgId, getRequestId } from '@jtkunley/service-runtime';
 
 await run({ orgId: 'org-abc', requestId: 'req-123' }, async () => {
   await processRequest(); // getOrgId() returns 'org-abc' anywhere in the call stack
@@ -70,7 +70,7 @@ await run({ orgId: 'org-abc', requestId: 'req-123' }, async () => {
 ```ts
 import express from 'express';
 import { rootLogger } from './logger'; // your RootLogger implementation
-import { createExpressMiddleware } from 'service-runtime';
+import { createExpressMiddleware } from '@jtkunley/service-runtime';
 
 const app = express();
 const logger = rootLogger.child('http', 'request');
@@ -93,7 +93,7 @@ With a `logger`, a missing request ID is logged as a `warn` and a rejected reque
 ```ts
 import Koa from 'koa';
 import { rootLogger } from './logger'; // your RootLogger implementation
-import { createKoaMiddleware } from 'service-runtime';
+import { createKoaMiddleware } from '@jtkunley/service-runtime';
 
 const app = new Koa();
 const logger = rootLogger.child('http', 'request');
@@ -109,7 +109,7 @@ Same behaviour as the Express variant.
 ### Background jobs and cron
 
 ```ts
-import { run } from 'service-runtime';
+import { run } from '@jtkunley/service-runtime';
 
 await run({ orgId: process.env.ORG_ID! }, () => runJob());
 ```
@@ -117,7 +117,7 @@ await run({ orgId: process.env.ORG_ID! }, () => runJob());
 ### Outgoing fetch
 
 ```ts
-import { createFetchWrapper } from 'service-runtime';
+import { createFetchWrapper } from '@jtkunley/service-runtime';
 
 const fetch = createFetchWrapper();
 
@@ -195,20 +195,20 @@ Returns a `fetch`-compatible function. When called inside a `run()` scope, it in
 
 | Import | Exports |
 |--------|---------|
-| `service-runtime` | Request context, graceful shutdown, fatal error handlers, the deployment tier, the logger types |
-| `service-runtime/cron` | `createCron`, `CronOptions`, `CronController` |
-| `service-runtime/tier` | `getTier`, `isNonProdTier`, `isProdTier`, `NON_PROD_TIER_PATTERN`, `PROD_TIER_PATTERN`, `TierEnv` |
+| `@jtkunley/service-runtime` | Request context, graceful shutdown, fatal error handlers, the deployment tier, the logger types |
+| `@jtkunley/service-runtime/cron` | `createCron`, `CronOptions`, `CronController` |
+| `@jtkunley/service-runtime/tier` | `getTier`, `isNonProdTier`, `isProdTier`, `NON_PROD_TIER_PATTERN`, `PROD_TIER_PATTERN`, `TierEnv` |
 
-`node-cron` is the package's only runtime dependency, so `createCron` lives on its own subpath: a service that doesn't schedule jobs never loads it. `service-runtime/tier` loads nothing but the tier check, for code that wants only that.
+`node-cron` is the package's only runtime dependency, so `createCron` lives on its own subpath: a service that doesn't schedule jobs never loads it. `@jtkunley/service-runtime/tier` loads nothing but the tier check, for code that wants only that.
 
-The root, these subpaths and `service-runtime/package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
+The root, these subpaths and `@jtkunley/service-runtime/package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
 
 ## Deployment tier
 
 `TIER` names the deployment a process runs in. Gate what must never reach production (mock adapters, an interactive API console) on `isNonProdTier`, and what must only run in production (real integrations, paging) on `isProdTier`. A tier on neither list, unset included, passes neither check, so an unknown deployment unlocks nothing.
 
 ```ts
-import { getTier, isNonProdTier } from 'service-runtime/tier';
+import { getTier, isNonProdTier } from '@jtkunley/service-runtime/tier';
 
 if (isNonProdTier(getTier())) {
   app.use('/docs', apiConsole);
@@ -249,7 +249,7 @@ import {
   createShutdownState,
   registerFatalHandlers,
   setupGracefulShutdown,
-} from 'service-runtime';
+} from '@jtkunley/service-runtime';
 
 registerFatalHandlers(rootLogger); // first, so a failure while starting is caught
 
@@ -316,7 +316,7 @@ Errors inside `run()` are handled per tick: they are logged when you pass `logge
 ### Basic usage
 
 ```ts
-import { createCron } from 'service-runtime/cron';
+import { createCron } from '@jtkunley/service-runtime/cron';
 
 const job = createCron({
   name: 'nightly-sync',

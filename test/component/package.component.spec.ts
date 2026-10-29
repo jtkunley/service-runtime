@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { describe, expect, inject, it } from 'vitest';
 
 const appDir = dirname(inject('serviceEntry'));
-const packageDir = join(appDir, '..', 'node_modules', 'service-runtime');
+const packageDir = join(appDir, '..', 'node_modules', '@jtkunley', 'service-runtime');
 const consumerRequire = createRequire(join(appDir, 'consumer.js'));
 
 function loadsNodeCron(entry: string): boolean {
@@ -16,8 +16,8 @@ function loadsNodeCron(entry: string): boolean {
 describe('the installed package', () => {
     // node-cron is the package's only runtime dependency; only ./cron may load it.
     it('loads node-cron only through ./cron', () => {
-        expect(loadsNodeCron('service-runtime')).toBe(false);
-        expect(loadsNodeCron('service-runtime/cron')).toBe(true);
+        expect(loadsNodeCron('@jtkunley/service-runtime')).toBe(false);
+        expect(loadsNodeCron('@jtkunley/service-runtime/cron')).toBe(true);
     });
 
     it.each([
@@ -25,8 +25,8 @@ describe('the installed package', () => {
         ['/cron', 'src/lib/cron/cron.js'],
         ['/tier', 'src/lib/tier/tier.js'],
         ['/package.json', 'package.json'],
-    ])('resolves service-runtime%s', (subpath, file) => {
-        expect(realpathSync(consumerRequire.resolve(`service-runtime${subpath}`))).toBe(
+    ])('resolves @jtkunley/service-runtime%s', (subpath, file) => {
+        expect(realpathSync(consumerRequire.resolve(`@jtkunley/service-runtime${subpath}`))).toBe(
             realpathSync(join(packageDir, file)),
         );
     });
@@ -38,8 +38,8 @@ describe('the installed package', () => {
         '/src/index',
         '/src/lib/cron/cron',
         '/src/lib/lifecycle/gracefulShutdown.js',
-    ])('does not expose service-runtime%s', (subpath) => {
-        expect(() => consumerRequire.resolve(`service-runtime${subpath}`)).toThrow(
+    ])('does not expose @jtkunley/service-runtime%s', (subpath) => {
+        expect(() => consumerRequire.resolve(`@jtkunley/service-runtime${subpath}`)).toThrow(
             expect.objectContaining({ code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' }) as Error,
         );
     });

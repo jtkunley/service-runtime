@@ -8,6 +8,6 @@ delete pkg.scripts;
 delete pkg.devDependencies;
 writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(pkg, null, 4)}\n`);
 
-for (const file of ['README.md', 'CHANGELOG.md']) {
+for (const file of ['README.md', 'CHANGELOG.md', 'LICENSE']) {
     copyFileSync(file, join(outDir, file));
 }

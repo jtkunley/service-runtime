@@ -19,7 +19,7 @@ const FIXTURE_DEPS = ['express', 'node-cron'];
  */
 export default function setup({ provide }: TestProject): () => void {
     const root = mkdtempSync(join(tmpdir(), 'service-runtime-component-'));
-    const packageDir = join(root, 'node_modules', 'service-runtime');
+    const packageDir = join(root, 'node_modules', '@jtkunley', 'service-runtime');
     const run = (...args: string[]) => execFileSync(process.execPath, args, { cwd: REPO });
 
     run(
