@@ -1,6 +1,7 @@
 import type { Server } from 'http';
 import { toError } from '../shared/errors';
 import type { LogData, RootLogger } from '../shared/logger';
+import { exitAfterFlush } from './exitAfterFlush';
 import { createShutdownState, type ShutdownState } from './shutdownState';
 
 const FORCE_EXIT_MS = 30_000;
@@ -15,7 +16,10 @@ const IDLE_SWEEP_MS = 1_000;
 export type CleanupFn = () => void | Promise<void>;
 
 export interface GracefulShutdownOptions {
-    /** From the first signal to the exit; past it the process exits 1. Default 30000. */
+    /**
+     * From the first signal to the exit; past it the process exits 1, after up
+     * to a second for the logger to flush. Default 30000.
+     */
     forceExitMs?: number;
     /**
      * Runs before the server stops accepting connections, with readiness
@@ -112,14 +116,14 @@ export function setupGracefulShutdown(
                 new Error('Graceful shutdown timed out'),
                 { signal },
             );
-            process.exit(1);
+            exitAfterFlush(rootLogger, 1);
         }, forceExitMs);
 
         void shutdown({ signal })
             .catch(() => 1)
             .then((exitCode) => {
                 clearTimeout(forceExit);
-                process.exit(exitCode);
+                exitAfterFlush(rootLogger, exitCode);
             });
     };
 

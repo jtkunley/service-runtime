@@ -53,6 +53,11 @@ const rootLogger: RootLogger = {
             error: (message, error, data) => write('error', message, data, error),
         };
     },
+    // Slow on purpose, so the tests can tell the process waited for it.
+    flush: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        process.stdout.write(`${JSON.stringify({ level: 'info', message: 'Logs flushed' })}\n`);
+    },
 };
 
 registerFatalHandlers(rootLogger);

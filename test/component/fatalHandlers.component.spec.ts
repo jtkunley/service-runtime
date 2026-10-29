@@ -18,7 +18,7 @@ describe('fatal error handling in a running service', () => {
             'rejected with no handler',
         ],
     ])(
-        'logs %s and exits 1 at once, skipping graceful shutdown',
+        'logs %s, lets the logger flush, and exits 1, skipping graceful shutdown',
         async (_name, path, message, error) => {
             const service = await startService();
 
@@ -32,6 +32,7 @@ describe('fatal error handling in a running service', () => {
                 error,
             });
             expect(service.messages()).not.toContain('Received shutdown signal, closing server...');
+            expect(service.messages().at(-1)).toBe('Logs flushed');
         },
     );
 });

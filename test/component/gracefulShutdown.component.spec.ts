@@ -21,7 +21,7 @@ function connectionRefused(url: string): Promise<boolean> {
 describe('graceful shutdown of a running service', () => {
     afterEach(stopServices);
 
-    it('on SIGTERM, fails readiness, finishes the in-flight request in its context, refuses new connections, cleans up and exits 0', async () => {
+    it('on SIGTERM, fails readiness, finishes the in-flight request in its context, refuses new connections, cleans up, flushes the logger and exits 0', async () => {
         const service = await startService({ SHUTDOWN_DELAY_MS: '500' });
         expect((await fetch(`${service.url}/ready`)).status).toBe(200);
         const inFlight = fetch(`${service.url}/slow?ms=1000`, { headers: BOTH_IDS });
@@ -44,6 +44,7 @@ describe('graceful shutdown of a running service', () => {
         expect(service.messages().indexOf('Database closed')).toBeLessThan(
             service.messages().indexOf('Graceful shutdown complete'),
         );
+        expect(service.messages().at(-1)).toBe('Logs flushed');
     });
 
     it('closes the keep-alive connection soon after the last response, instead of waiting for it to time out', async () => {
@@ -86,7 +87,7 @@ describe('graceful shutdown of a running service', () => {
         expect(service.messages()).toContain('Database closed');
     });
 
-    it('forces exit 1 when a request outlasts forceExitMs', async () => {
+    it('forces exit 1 when a request outlasts forceExitMs, once the logger has flushed', async () => {
         const service = await startService({ FORCE_EXIT_MS: '500' });
         void fetch(`${service.url}/hang`, { headers: BOTH_IDS }).catch(() => undefined);
         await service.waitForLog('Hanging request started');
@@ -96,5 +97,6 @@ describe('graceful shutdown of a running service', () => {
         expect(await service.exited).toBe(1);
         expect(service.messages()).toContain('Graceful shutdown timed out, forcing exit');
         expect(service.messages()).not.toContain('Graceful shutdown complete');
+        expect(service.messages().at(-1)).toBe('Logs flushed');
     });
 });

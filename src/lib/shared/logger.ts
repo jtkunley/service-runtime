@@ -8,4 +8,6 @@ export interface ChildLogger {
 
 export interface RootLogger {
     child(module: string, action: string): ChildLogger;
+    /** Writes out buffered lines; awaited, for at most a second, before the process exits. */
+    flush?(): Promise<void>;
 }

@@ -319,6 +319,21 @@ describe('setupGracefulShutdown', () => {
         });
     });
 
+    describe('the exit', () => {
+        it('lets a logger that can flush write out the last lines first', async () => {
+            const order: string[] = [];
+            const root = createMockRootLogger();
+            vi.mocked(root.childLogger.info).mockImplementation((message) => order.push(message));
+            root.flush = () => Promise.resolve(void order.push('flushed'));
+            setup(createMockServer(), root);
+
+            process.emit('SIGTERM', 'SIGTERM');
+
+            expect(await exited).toBe(0);
+            expect(order.slice(-2)).toEqual(['Graceful shutdown complete', 'flushed']);
+        });
+    });
+
     describe('the deadline', () => {
         it.each([
             [undefined, 30_000],
@@ -344,6 +359,26 @@ describe('setupGracefulShutdown', () => {
                 new Error('Graceful shutdown timed out'),
                 { signal: 'SIGTERM' },
             );
+        });
+
+        it('lets a logger that can flush write out the timeout line before the forced exit', async () => {
+            vi.useFakeTimers();
+            const root = createMockRootLogger();
+            root.flush = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 200)));
+            setup(
+                createMockServer(() => undefined),
+                root,
+                [],
+                { forceExitMs: 1_000 },
+            );
+
+            process.emit('SIGTERM', 'SIGTERM');
+            await vi.advanceTimersByTimeAsync(1_000);
+            expect(root.flush).toHaveBeenCalledOnce();
+            expect(exits).toEqual([]);
+            await vi.advanceTimersByTimeAsync(200);
+
+            expect(exits).toEqual([1]);
         });
 
         it('cancels the forced exit once shutdown completes', async () => {

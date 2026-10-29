@@ -106,6 +106,46 @@ describe('registerFatalHandlers', () => {
             expect(order).toEqual([`log ${message}`, 'exit 1']);
         });
 
+        it('lets a logger that can flush write the line out before exiting', async () => {
+            let flushed = (): void => undefined;
+            const root = loggingInOrder();
+            root.flush = vi.fn(
+                () =>
+                    new Promise<void>(
+                        (resolve) => (flushed = () => resolve(void order.push('flushed'))),
+                    ),
+            );
+            registerFatalHandlers(root);
+
+            added('uncaughtException')[0]?.(new Error('boom'));
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            expect(order).toEqual(['log Uncaught exception, exiting']);
+            flushed();
+
+            await vi.waitFor(() =>
+                expect(order).toEqual(['log Uncaught exception, exiting', 'flushed', 'exit 1']),
+            );
+        });
+
+        it('logs a failure that arrives while flushing, and still exits only once', async () => {
+            let flushed = (): void => undefined;
+            const root = loggingInOrder();
+            root.flush = () => new Promise<void>((resolve) => (flushed = resolve));
+            registerFatalHandlers(root);
+
+            added('uncaughtException')[0]?.(new Error('first'));
+            added('unhandledRejection')[0]?.(new Error('second'));
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            flushed();
+
+            await vi.waitFor(() => expect(order).toContain('exit 1'));
+            expect(order).toEqual([
+                'log Uncaught exception, exiting',
+                'log Unhandled promise rejection, exiting',
+                'exit 1',
+            ]);
+        });
+
         it('wraps a reason that is not an Error in one, keeping it as the cause', () => {
             const root = createMockRootLogger();
             registerFatalHandlers(root);
