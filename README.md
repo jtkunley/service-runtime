@@ -16,7 +16,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
   - [Reading values](#reading-values)
   - [Logging the values](#logging-the-values)
   - [Background jobs and message consumers](#background-jobs-and-message-consumers)
-  - [Outgoing fetch](#outgoing-fetch)
+  - [Sending values on](#sending-values-on)
 - [Starting and stopping](#starting-and-stopping)
   - [Health probes](#health-probes)
   - [Graceful shutdown](#graceful-shutdown)
@@ -30,7 +30,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 ## Design decisions
 
 - **One way to wire a service.** The fatal handlers have to be registered before anything can fail, readiness has to read the same state graceful shutdown marks, and probes have to be answered before the context middleware rejects them. `configureService` and `listen` get that right every time, and the parts they're built from aren't exported, so they can't be wired any other way.
-- **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required and where it's forwarded. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Third-party APIs only receive the values marked for every destination.
+- **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required and which header it travels under. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Each destination the service calls lists the values it receives, so one line shows what a third party gets, and the package makes the headers without caring which HTTP client sends them.
 - **Probes never need context.** Readiness and liveness are answered before the app sees the request, so a probe without a tenant header can't be rejected and leave a pod never ready.
 - **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short, and liveness keeps passing, so the orchestrator doesn't kill a process that is draining.
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the process logs it and exits `1` without attempting a graceful shutdown, and leaves the restart to the orchestrator.
@@ -64,12 +64,15 @@ export const service = configureService({
     tenantId: {
       value: (req) => req.headers['x-tenant-id'],
       required: true,
-      forward: { header: 'x-tenant-id', to: 'internal' },
+      header: 'x-tenant-id',
     },
     requestId: {
       value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-      forward: { header: 'x-request-id', to: 'all' },
+      header: 'x-request-id',
     },
+  },
+  destinations: {
+    platform: ['tenantId', 'requestId'],
   },
 });
 ```
@@ -82,9 +85,9 @@ import { service } from './service';
 const app = express();
 app.use(service.middleware);
 app.get('/orders', async (_req, res) => {
-  const orders = await service.fetch(
-    `https://orders.internal/tenants/${service.context.get('tenantId')}/orders`,
-  );
+  const orders = await fetch(`https://orders.internal/tenants/${service.context.get('tenantId')}/orders`, {
+    headers: service.context.getHeaders('platform'),
+  });
   res.json(await orders.json());
 });
 
@@ -108,13 +111,18 @@ configureService({
     tenantId: {
       value: (req) => req.headers['x-tenant-id'],
       required: true,
-      forward: { header: 'x-tenant-id', to: 'internal' },
+      header: 'x-tenant-id',
     },
     // Request threading: one ID across every service a request touches, so its logs join up.
     requestId: {
       value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-      forward: { header: 'x-request-id', to: 'all' },
+      header: 'x-request-id',
     },
+  },
+  // Each service or API this one calls, and the values it receives.
+  destinations: {
+    platform: ['tenantId', 'requestId'],
+    payments: ['requestId'], // a third party never learns which tenant is calling
   },
 });
 ```
@@ -123,9 +131,9 @@ configureService({
 |-----------|-------------|
 | `value` | `(req) => string \| undefined`, called once at the start of each request with its headers (lower-cased names), method and path. The result is trimmed, and a blank one counts as absent. |
 | `required` | Without a value, the middleware answers `400` and `run()` throws. |
-| `forward` | `{ header, to }`: `service.fetch` sends the value as `header`, and `service.fetchExternal` too when `to` is `'all'`. Without it, the value never leaves the service. |
+| `header` | The header the value travels under, to the destinations that list it. Without it, the value never leaves the service. |
 
-Any other attribute is a compile error, so a misspelling like `requried` can't be silently ignored.
+Any other attribute is a compile error, so a misspelling like `requried` can't be silently ignored. A destination listing an entry that doesn't exist is a compile error too, and one listing an entry without a `header` fails at startup.
 
 A single-tenant service names its one tenant instead of reading the header, `value: () => process.env.TENANT_ID`, so no caller can route a request to another tenant.
 
@@ -169,14 +177,30 @@ await service.context.run({ headers: message.headers }, () => handle(message));
 
 `run()` uses the same `value` functions as the middleware, so every value has one source of truth. It throws, naming every required entry without a value, before calling the function.
 
-### Outgoing fetch
+### Sending values on
+
+`getHeaders(destination)` returns the headers for a call to one of the declared destinations: each value it lists, under its entry's `header`. Values that are unset are left out, and outside a request it returns `{}`. Only declared destinations are accepted, so a typo is a compile error.
 
 ```ts
-await service.fetch('https://orders.internal/api/orders');        // sends x-tenant-id and x-request-id
-await service.fetchExternal('https://api.partner.com/v1/quotes'); // sends only x-request-id
+service.context.getHeaders('platform'); // { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1' }
+service.context.getHeaders('payments'); // { 'x-request-id': 'req-1' }
 ```
 
-Inside a request, each entry forwarded to the destination is sent under its header, replacing a header of that name the caller set. Headers for entries not forwarded there are sent as the caller set them. Outside a request, the call passes through to `globalThis.fetch` unchanged.
+The service wires them into whatever sends the request, once. Spread them last, so they replace a header of the same name the caller set:
+
+```ts
+// fetch
+await fetch(url, { ...init, headers: { ...init?.headers, ...service.context.getHeaders('platform') } });
+
+// axios, for every request the instance makes
+platformApi.interceptors.request.use((config) => {
+  Object.assign(config.headers, service.context.getHeaders('platform'));
+  return config;
+});
+
+// a queue producer: the consumer's context.run({ headers: message.headers }) reads them back
+await queue.publish(payload, { headers: service.context.getHeaders('platform') });
+```
 
 ## Starting and stopping
 
@@ -245,7 +269,7 @@ The tier checks are also exported from the root. `@jtkunley/service-runtime/tier
 
 ## API
 
-### `configureService({ logger, context })`
+### `configureService({ logger, context, destinations? })`
 
 Registers the fatal error handlers and returns a `Service`. Call it once per process, first at startup; a second call throws an `Error`.
 
@@ -255,8 +279,7 @@ Registers the fatal error handlers and returns a `Service`. Call it once per pro
 | `context.get(name)` | The value of one entry. Throws `Error('No request context')` outside a request. |
 | `context.getStore()` | Every value, frozen, or `undefined` outside a request. |
 | `context.run(source, fn)` | Works out the values from `source`, `{ headers, method?, path? }`, and runs `fn` inside the context, returning what it returns. Throws if a required value is missing. |
-| `fetch` | `fetch`, forwarding every entry marked `forward`. |
-| `fetchExternal` | `fetch`, forwarding only the entries forwarded `to: 'all'`. |
+| `context.getHeaders(destination)` | The headers for a call to a declared destination; `{}` outside a request. Throws for an undeclared one. |
 | `onShutdown(cleanup)` | Adds a `CleanupFn`, `() => void \| Promise<void>`, to run on shutdown. |
 | `isShuttingDown()` | Whether shutdown has started. |
 | `listen(app, options)` | Starts the server; resolves with its `AddressInfo`. Call it once; a second call rejects. |
@@ -305,9 +328,8 @@ npm run build           # compile the publishable package into dist/
 src/
   index.ts                 the root entry point
   lib/service/             configureService, which wires everything below together
-  lib/context/             the request context itself
+  lib/context/             the request context itself, and the headers for each destination
   lib/middleware/          Express middleware that fills the context
-  lib/fetch/               fetch wrapper that forwards context values downstream
   lib/shutdown/            graceful shutdown and the shutdown state
   lib/fatal/               fatal error handlers
   lib/tier/                deployment tier checks, the /tier entry point
