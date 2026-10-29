@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully: **request context** that carries the tenant and request ID through `AsyncLocalStorage`, **graceful shutdown** that really drains, **fatal error handling**, **deployment tier** checks, and **scheduled jobs** that stop cleanly.
+The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully: **request context** that carries the values each request needs, such as its tenant and request ID, through `AsyncLocalStorage`, **graceful shutdown** that really drains, **fatal error handling**, **deployment tier** checks, and **scheduled jobs** that stop cleanly.
 
 ## Contents
 
@@ -12,10 +12,11 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Request context](#request-context)
-  - [Basic usage](#basic-usage)
+  - [Configuring the context](#configuring-the-context)
+  - [Reading values](#reading-values)
   - [Express middleware](#express-middleware)
   - [Koa middleware](#koa-middleware)
-  - [Background jobs and cron](#background-jobs-and-cron)
+  - [Background jobs and message consumers](#background-jobs-and-message-consumers)
   - [Outgoing fetch](#outgoing-fetch)
   - [API](#request-context-api)
 - [Entry points](#entry-points)
@@ -25,7 +26,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
   - [Fatal errors](#fatal-errors)
   - [API](#graceful-shutdown-api)
 - [Scheduled jobs (`createCron`)](#scheduled-jobs-createcron)
-  - [Basic usage](#basic-usage-2)
+  - [Basic usage](#basic-usage)
   - [Logger, overlap, and error hook](#logger-overlap-and-error-hook)
   - [Stopping with graceful shutdown](#stopping-with-graceful-shutdown)
   - [API](#scheduled-jobs-api)
@@ -34,7 +35,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 
 ## Design decisions
 
-- **A request without a tenant never reaches your code.** In a multi-tenant service the org ID must come from the caller; without one the middleware answers `400` rather than guess. `run()` refuses a blank org ID, and the context it hands out is frozen, so nothing can switch tenants partway through a request. A single-tenant service names its one org instead, and a header can't override it.
+- **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required, forwarded and logged. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Third-party APIs only receive the values marked for every destination.
 - **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short.
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the fatal handlers log and exit `1` without attempting a graceful shutdown, and leave the restart to the orchestrator.
 - **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
@@ -55,13 +56,14 @@ Requires Node.js 22 or later. Bring your own logger: anything that implements th
 A service wired end to end. The component tests run a service much like this one, in [`test/component/fixtures/service.mts`](test/component/fixtures/service.mts).
 
 ```ts
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import express from 'express';
 import {
+  configureContext,
   createExpressMiddleware,
   createFetchWrapper,
   createShutdownState,
-  getOrgId,
   registerFatalHandlers,
   setupGracefulShutdown,
 } from '@jtkunley/service-runtime';
@@ -70,16 +72,29 @@ import { rootLogger } from './logger'; // your RootLogger implementation
 
 registerFatalHandlers(rootLogger); // first, so a failure while starting is caught
 
+const context = configureContext({
+  tenantId: {
+    value: (req) => req.headers['x-tenant-id'],
+    required: true,
+    forward: { header: 'x-tenant-id', to: 'internal' },
+    log: true,
+  },
+  requestId: {
+    value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
+    forward: { header: 'x-request-id', to: 'all' },
+    log: true,
+  },
+});
 const state = createShutdownState();
-const fetch = createFetchWrapper(); // forwards x-org-id and x-request-id downstream
+const fetch = createFetchWrapper(context); // forwards x-tenant-id and x-request-id downstream
 
 const app = express();
 app.get('/readiness', (_req, res) => {
   res.sendStatus(state.isShuttingDown() ? 503 : 200);
 });
-app.use(createExpressMiddleware({ logger: rootLogger.child('http', 'request') }));
+app.use(createExpressMiddleware(context, { logger: rootLogger.child('http', 'request') }));
 app.get('/orders', async (_req, res) => {
-  const orders = await fetch(`https://orders.internal/orgs/${getOrgId()}/orders`);
+  const orders = await fetch(`https://orders.internal/tenants/${context.get('tenantId')}/orders`);
   res.json(await orders.json());
 });
 
@@ -92,145 +107,126 @@ setupGracefulShutdown(server, rootLogger, [() => purge.stop(), closeDb], { state
 
 ## Request context
 
-Carries `orgId` and `requestId` through [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the lifetime of a request, message, or job. Any layer reads either value on demand — no parameter threading.
+A service declares, once at startup, the values every request carries. Each entry has a `value` function that works it out when a request starts, and attributes that decide what happens to it. The values are held in [`AsyncLocalStorage`](https://nodejs.org/api/async_context.html) for the rest of the request, so any code can read them without passing them through every call. The package knows nothing about what the values mean: tenancy, request IDs, locales and anything else are the service's own declarations.
 
-### Basic usage
-
-At a service boundary, call `run()` to establish the scope. Everything that runs inside the callback (including awaited async work) can read the context.
+### Configuring the context
 
 ```ts
-import { run, getOrgId, getRequestId } from '@jtkunley/service-runtime';
+import { randomUUID } from 'node:crypto';
+import { configureContext } from '@jtkunley/service-runtime';
 
-await run({ orgId: 'org-abc', requestId: 'req-123' }, async () => {
-  await processRequest(); // getOrgId() returns 'org-abc' anywhere in the call stack
+export const context = configureContext({
+  // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
+  tenantId: {
+    value: (req) => req.headers['x-tenant-id'],
+    required: true,
+    forward: { header: 'x-tenant-id', to: 'internal' },
+    log: true,
+  },
+  // Request threading: one ID across every service a request touches, so its logs join up.
+  requestId: {
+    value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
+    forward: { header: 'x-request-id', to: 'all' },
+    log: true,
+  },
 });
 ```
 
-`requestId` is optional — a UUID is generated automatically if omitted.
+| Attribute | Description |
+|-----------|-------------|
+| `value` | `(req) => string \| undefined`, called once at the start of each request with its headers (lower-cased names), method and path. The result is trimmed, and a blank one counts as absent. |
+| `required` | Without a value, the middleware answers `400` and `run()` throws. |
+| `forward` | `{ header, to }`: the fetch wrapper sends the value as `header`, to internal destinations only (`'internal'`) or to every destination (`'all'`). Without it, the value never leaves the service. |
+| `log` | Include the value in `getLogData()` and in the middleware's log lines. |
+
+A single-tenant service names its one tenant instead of reading the header, `value: () => process.env.TENANT_ID`, so no caller can route a request to another tenant.
+
+A header is only as trustworthy as whatever sets it. Read the tenant from a header only behind a gateway that sets it, or strips it from outside traffic.
+
+### Reading values
+
+```ts
+context.get('tenantId');  // string: a required entry always has a value
+context.get('requestId'); // string | undefined
+context.getStore();       // { tenantId, requestId }, frozen, or undefined outside a request
+context.getLogData();     // { tenantId, requestId }: the entries marked log, to add to log lines
+```
+
+`get` accepts only configured names, and its return type follows the entry's `required` attribute. The values are frozen, so nothing can switch the tenant partway through a request.
 
 ### Express middleware
 
 ```ts
 import express from 'express';
-import { rootLogger } from './logger'; // your RootLogger implementation
 import { createExpressMiddleware } from '@jtkunley/service-runtime';
+import { context } from './context';
+import { rootLogger } from './logger'; // your RootLogger implementation
 
 const app = express();
-const logger = rootLogger.child('http', 'request');
-
-app.use(createExpressMiddleware({
-  getDefaultOrgId: () => process.env.ORG_ID, // single-tenant services only
-  logger,
-}));
+app.use(createExpressMiddleware(context, { logger: rootLogger.child('http', 'request') }));
 ```
 
-Reads `x-org-id` and `x-request-id` from the request headers and calls `next()` inside `run()`, generating a request ID when there is none.
-
-- **Multi-tenant** (no `getDefaultOrgId`): the org ID must come from the caller. A request without one is answered `400` with `{ error: 'Missing required header: x-org-id' }` and never reaches `next()`.
-- **Single-tenant** (`getDefaultOrgId` returns an org): every request runs under that org, whatever its header says. There is only one tenant the service can serve, so a different header can't misroute data.
-
-With a `logger`, a missing request ID is logged as a `warn` and a rejected request as an `error`, both with the method, full path, IDs and user agent. A request missing both gets both lines.
+Works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`. With a `logger`, the rejection is logged as an `error` with the method, full path, user agent, the names of the missing entries, and the values marked `log` that it did have.
 
 ### Koa middleware
 
 ```ts
 import Koa from 'koa';
-import { rootLogger } from './logger'; // your RootLogger implementation
 import { createKoaMiddleware } from '@jtkunley/service-runtime';
 
 const app = new Koa();
-const logger = rootLogger.child('http', 'request');
-
-app.use(createKoaMiddleware({
-  getDefaultOrgId: () => process.env.ORG_ID,
-  logger,
-}));
+app.use(createKoaMiddleware(context, { logger }));
 ```
 
 Same behaviour as the Express variant.
 
-### Background jobs and cron
+### Background jobs and message consumers
 
 ```ts
-import { run } from '@jtkunley/service-runtime';
-
-await run({ orgId: process.env.ORG_ID! }, () => runJob());
+await context.run({ headers: { 'x-tenant-id': tenantId } }, () => runJob());
+await context.run({ headers: message.headers }, () => handle(message));
 ```
+
+`run()` uses the same `value` functions as the middleware, so every value has one source of truth. It throws, naming every required entry without a value, before calling the function.
 
 ### Outgoing fetch
 
 ```ts
 import { createFetchWrapper } from '@jtkunley/service-runtime';
 
-const fetch = createFetchWrapper();
+const fetchInternal = createFetchWrapper(context);
+const fetchExternal = createFetchWrapper(context, { destination: 'external' });
 
-// Inside a context scope, both headers are injected automatically:
-const res = await fetch('https://downstream-service/api/resource');
-// x-org-id and x-request-id injected from current context
+await fetchInternal('https://orders.internal/api/orders'); // sends x-tenant-id and x-request-id
+await fetchExternal('https://api.partner.com/v1/quotes');  // sends only x-request-id
 ```
 
-Outside a context scope, the call passes through to `globalThis.fetch` unmodified.
-
-For third-party destinations, opt out of injecting the org ID header. The request ID is still sent for end-to-end tracing. Disabling an option only stops injection - headers the caller sets explicitly are sent as-is:
-
-```ts
-const externalFetch = createFetchWrapper({ orgId: false });
-```
+Inside a request, each entry forwarded to the destination is sent under its header, replacing a header of that name the caller set. Headers for entries not forwarded there are sent as the caller set them. Outside a request, the call passes through to `globalThis.fetch` unchanged.
 
 ### Request context API
 
-#### Constants
+#### `configureContext(config)`
 
-```ts
-export const ORG_ID_HEADER = 'x-org-id';
-export const REQUEST_ID_HEADER = 'x-request-id';
-```
+Takes an object of named `ContextEntry` values and returns a `Context`. Each call creates its own store; a service normally makes one and exports it.
 
-#### `run<T>(ctx, fn)`
+| `Context` method | Description |
+|------------------|-------------|
+| `run(source, fn)` | Works out the values from `source`, `{ headers, method?, path? }`, and runs `fn` inside the context, returning what it returns. Throws if a required value is missing. |
+| `get(name)` | The value of one entry. Throws `Error('No request context')` outside a request. |
+| `getStore()` | Every value, frozen, or `undefined` outside a request. |
+| `getLogData()` | The values of the entries marked `log`; empty outside a request. |
 
-| Argument | Type | Description |
-|----------|------|-------------|
-| `ctx.orgId` | `string` | Required. |
-| `ctx.requestId` | `string` | Optional — UUID generated if absent. |
-| `fn` | `() => T` | Sync or async callback run within the context scope. |
+#### `createExpressMiddleware(context, opts?)` and `createKoaMiddleware(context, opts?)`
 
-Returns whatever `fn` returns.
+`opts` is `ContextMiddlewareOptions`, `{ logger?: ChildLogger }`; only `logger.error` is used.
 
-#### `getOrgId()`
+#### `createFetchWrapper(context, options?)`
 
-Returns the current `orgId`. Throws `Error('No request context')` if called outside a `run()` scope.
+Returns a `fetch`-compatible function. `options.destination` is `'internal'` (the default) or `'external'`; an external destination gets only the entries forwarded `to: 'all'`.
 
-#### `getRequestId()`
+#### Types
 
-Returns the current `requestId`. Throws `Error('No request context')` if called outside a `run()` scope.
-
-#### `getStore()`
-
-Returns the current `RequestContext`, `{ orgId, requestId }`, or `undefined` if called outside a scope. Use for conditional checks where throwing is undesirable. The context is frozen, so no code can switch the tenant partway through a request.
-
-IDs are trimmed, and a blank ID counts as absent: a blank `orgId` throws, and a blank `requestId` is replaced with a UUID.
-
-#### `createExpressMiddleware(opts?)`
-
-Takes `ContextMiddlewareOptions`:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `getDefaultOrgId` | `() => string \| undefined` | — | Single-tenant: the org every request runs under, read on each request. A blank value counts as none. |
-| `logger` | `ChildLogger` (only `warn` and `error` are used) | — | Logs a missing request ID (`warn`) and a rejected request (`error`). |
-
-#### `createKoaMiddleware(opts?)`
-
-Same options as `createExpressMiddleware`.
-
-#### `createFetchWrapper(options?)`
-
-Returns a `fetch`-compatible function. When called inside a `run()` scope, it injects `x-org-id` and `x-request-id` from the current context into every outbound request, merging with any headers the caller already set.
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `orgId` | `true` | Inject `x-org-id`. Set `false` for third-party APIs. |
-| `requestId` | `true` | Inject `x-request-id`. |
+`ContextEntry`, `ContextConfig`, `ContextRequest` (what a `value` function receives), `ContextSource` (what `run()` takes) and `ContextValues<C>` (the values of a configuration) are exported for annotating your own code.
 
 ---
 
