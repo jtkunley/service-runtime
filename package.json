@@ -1,7 +1,7 @@
 {
     "name": "@jtkunley/service-runtime",
     "version": "1.0.0",
-    "description": "Request context, health probes, graceful shutdown, fatal error handling and deployment tier checks for Node.js HTTP services, wired by one call.",
+    "description": "Request context, health probes, graceful shutdown and fatal error handling for Node.js HTTP services, wired by one call.",
     "keywords": [
         "asynclocalstorage",
         "request-context",
@@ -47,18 +47,7 @@
             "types": "./src/index.d.ts",
             "default": "./src/index.js"
         },
-        "./tier": {
-            "types": "./src/lib/tier/tier.d.ts",
-            "default": "./src/lib/tier/tier.js"
-        },
         "./package.json": "./package.json"
-    },
-    "typesVersions": {
-        "*": {
-            "tier": [
-                "./src/lib/tier/tier.d.ts"
-            ]
-        }
     },
     "files": [
         "src",

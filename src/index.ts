@@ -13,12 +13,3 @@ export type {
 } from './lib/context/configureContext';
 export type { CleanupFn } from './lib/shutdown/gracefulShutdown';
 export type { ChildLogger, LogData, RootLogger } from './lib/shared/logger';
-
-export {
-    getTier,
-    isNonProdTier,
-    isProdTier,
-    NON_PROD_TIER_PATTERN,
-    PROD_TIER_PATTERN,
-    type TierEnv,
-} from './lib/tier/tier';

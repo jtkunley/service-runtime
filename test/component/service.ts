@@ -16,7 +16,6 @@ export interface FixtureEnv {
     FAIL_CLEANUP?: string;
     FORCE_EXIT_MS?: string;
     SHUTDOWN_DELAY_MS?: string;
-    TIER?: string;
 }
 
 export interface RunningService {

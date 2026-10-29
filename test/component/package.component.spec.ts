@@ -19,7 +19,6 @@ describe('the installed package', () => {
 
     it.each([
         ['', 'src/index.js'],
-        ['/tier', 'src/lib/tier/tier.js'],
         ['/package.json', 'package.json'],
     ])('resolves @jtkunley/service-runtime%s', (subpath, file) => {
         expect(realpathSync(consumerRequire.resolve(`@jtkunley/service-runtime${subpath}`))).toBe(
@@ -44,6 +43,7 @@ describe('the installed package', () => {
 
     it.each([
         '/shutdown',
+        '/tier',
         '/context',
         '/src',
         '/src/index',

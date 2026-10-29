@@ -1,12 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import express from 'express';
-import {
-    configureService,
-    getTier,
-    isNonProdTier,
-    isProdTier,
-    type RootLogger,
-} from '@jtkunley/service-runtime';
+import { configureService, type RootLogger } from '@jtkunley/service-runtime';
 
 const env = process.env;
 const defaultTenantId = env['DEFAULT_TENANT_ID'];
@@ -65,11 +59,6 @@ const service = configureService({
 
 const log = rootLogger.child('fixture', 'service');
 const app = express();
-
-app.get('/tier', (_req, res) => {
-    const tier = getTier();
-    res.json({ tier: tier ?? null, nonProd: isNonProdTier(tier), prod: isProdTier(tier) });
-});
 
 app.use(service.middleware);
 

@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully, behind one call: **request context** that carries the values each request needs, such as its tenant and request ID, through `AsyncLocalStorage`, **health probes**, **graceful shutdown** that really drains, **fatal error handling**, and **deployment tier** checks. It has no runtime dependencies.
+The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully, behind one call: **request context** that carries the values each request needs, such as its tenant and request ID, through `AsyncLocalStorage`, **health probes**, **graceful shutdown** that really drains, and **fatal error handling**. It has no runtime dependencies.
 
 ## Contents
 
@@ -21,7 +21,6 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
   - [Health probes](#health-probes)
   - [Graceful shutdown](#graceful-shutdown)
   - [Fatal errors](#fatal-errors)
-- [Deployment tier](#deployment-tier)
 - [API](#api)
 - [Related packages](#related-packages)
 - [Development](#development)
@@ -36,7 +35,6 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the process logs it and exits `1` without attempting a graceful shutdown, and leaves the restart to the orchestrator.
 - **Importing the service is safe in tests.** `configureService` touches nothing process-wide; the fatal and signal handlers are registered by `listen`, which tests don't call, so a stray rejection in a test is reported by the test runner instead of exiting it.
 - **The last log line gets out.** Every exit, clean, forced or fatal, first waits for a logger that can `flush()`, for at most a second, so the line explaining the exit isn't lost in a buffer.
-- **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
 - **Only what every service needs, and nothing it doesn't.** No runtime dependencies, no framework beyond a thin Express adapter, and the `exports` map keeps internals private. Scheduled jobs, which not every service has, live in [`@jtkunley/cron`](https://github.com/jtkunley/cron).
 - **Tested the way it runs.** Unit tests hold coverage at 100%, enforced in CI. Component tests build the package as published, install it beside a real Express service, and drive that service as a separate process with real requests, real signals and real exit codes.
 
@@ -245,28 +243,6 @@ Before any exit, a logger with `flush()` gets up to a second to write out what i
 
 From the moment `listen` is called, an `uncaughtException` or `unhandledRejection` is logged through the child logger `server` / `fatal`, and the process exits with code 1 once the logger has flushed. The process is in an unknown state after either, so it skips graceful shutdown and leaves the restart to the orchestrator. Anything thrown that isn't an `Error` is wrapped in one and kept as its `cause`. A failure before `listen`, while the service is starting, takes Node's default: the stack trace on stderr and exit code 1.
 
-## Deployment tier
-
-`TIER` names the deployment a process runs in. Gate what must never reach production (mock adapters, an interactive API console) on `isNonProdTier`, and what must only run in production (real integrations, paging) on `isProdTier`. A tier on neither list, unset included, passes neither check, so an unknown deployment unlocks nothing.
-
-```ts
-import { getTier, isNonProdTier } from '@jtkunley/service-runtime/tier';
-
-if (isNonProdTier(getTier())) {
-  app.use('/docs', apiConsole);
-}
-```
-
-| Export | Answers |
-|--------|---------|
-| `getTier(env = process.env)` | `TIER` trimmed and lower-cased, or `undefined` when it is unset or blank. Only `env`'s own `TIER` is read, never an inherited one. |
-| `isNonProdTier(tier)` | `true` for `local`, `dev`, `test`, `qa`, `staging` and `pr<digits>` (a pull request preview), after trimming and lower-casing. |
-| `isProdTier(tier)` | `true` for `prod` and `production`, after trimming and lower-casing. |
-| `NON_PROD_TIER_PATTERN`, `PROD_TIER_PATTERN` | The two lists' sources as strings, `^(?:local\|dev\|test\|qa\|staging\|pr\d+)$` and `^(?:prod\|production)$`, matched against the normalised tier. |
-| `TierEnv` | The environment type `getTier` reads, `Readonly<Record<string, string \| undefined>>`. |
-
-The tier checks are also exported from the root. `@jtkunley/service-runtime/tier` loads nothing else, for code that wants only them.
-
 ## API
 
 ### `configureService({ logger, context, destinations? })`
@@ -298,12 +274,7 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 
 ### Entry points
 
-| Import | Exports |
-|--------|---------|
-| `@jtkunley/service-runtime` | `configureService`, the tier checks, and the types above |
-| `@jtkunley/service-runtime/tier` | `getTier`, `isNonProdTier`, `isProdTier`, `NON_PROD_TIER_PATTERN`, `PROD_TIER_PATTERN`, `TierEnv` |
-
-These and `@jtkunley/service-runtime/package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
+`@jtkunley/service-runtime`, exporting `configureService` and the types above, and its `package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
 
 ## Related packages
 
@@ -332,7 +303,6 @@ src/
   lib/middleware/          Express middleware that fills the context
   lib/shutdown/            graceful shutdown and the shutdown state
   lib/fatal/               fatal error handlers
-  lib/tier/                deployment tier checks, the /tier entry point
   lib/shared/              logger types, error helpers, flushing the logger before exit
   **/__tests__/            unit tests, one spec per source file
 test/component/            component tests against the built package
