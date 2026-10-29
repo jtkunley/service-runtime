@@ -30,7 +30,7 @@ const CONTEXT = {
 const DESTINATIONS = { internal: ['tenantId', 'requestId'], payments: ['requestId'] } as const;
 
 function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
-    const childLogger: ChildLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const childLogger: ChildLogger = { info: vi.fn(), error: vi.fn() };
     return { child: vi.fn(() => childLogger), childLogger };
 }
 

@@ -23,7 +23,6 @@ function createMockServer(close: (cb: (err?: Error) => void) => void = (cb) => c
 function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
     const childLogger: ChildLogger = {
         info: vi.fn(),
-        warn: vi.fn(),
         error: vi.fn(),
     };
     return { child: vi.fn(() => childLogger), childLogger };

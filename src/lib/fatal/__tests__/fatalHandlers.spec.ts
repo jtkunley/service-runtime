@@ -8,7 +8,6 @@ type Handler = (reason: unknown) => void;
 function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
     const childLogger: ChildLogger = {
         info: vi.fn(),
-        warn: vi.fn(),
         error: vi.fn(),
     };
     return { child: vi.fn(() => childLogger), childLogger };

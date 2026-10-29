@@ -44,7 +44,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 npm i @jtkunley/service-runtime
 ```
 
-Requires Node.js 22 or later. Bring your own logger: anything that implements the small `RootLogger` interface, `child(module, action)` returning `info`, `warn` and `error`, and optionally `flush()`, which is awaited before the process exits. A [`@jtkunley/logger`](https://github.com/jtkunley/logger) root logger fits as it is.
+Requires Node.js 22 or later. Bring your own logger: anything that implements the small `RootLogger` interface, `child(module, action)` returning `info` and `error`, and optionally `flush()`, which is awaited before the process exits. A [`@jtkunley/logger`](https://github.com/jtkunley/logger) root logger fits as it is.
 
 ## Quick start
 

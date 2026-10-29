@@ -24,7 +24,6 @@ const rootLogger: RootLogger = {
         };
         return {
             info: (message, data) => write('info', message, data),
-            warn: (message, data) => write('warn', message, data),
             error: (message, error, data) => write('error', message, data, error),
         };
     },
