@@ -11,17 +11,24 @@ import {
     type ContextConfig,
     type NoUnknownAttributes,
 } from '../context/configureContext';
+import {
+    createGetHeaders,
+    type Destinations,
+    type GetHeaders,
+    type ValidDestinations,
+} from '../context/getHeaders';
 import { registerFatalHandlers } from '../fatal/fatalHandlers';
-import { createFetchWrapper } from '../fetch/fetchWrapper';
 import { createExpressMiddleware } from '../middleware/express';
 import type { RootLogger } from '../shared/logger';
 import { setupGracefulShutdown, type CleanupFn } from '../shutdown/gracefulShutdown';
 import { createShutdownState } from '../shutdown/shutdownState';
 
-export interface ServiceOptions<C extends ContextConfig> {
+export interface ServiceOptions<C extends ContextConfig, D extends Destinations> {
     logger: RootLogger;
     /** The values every request carries, by name. */
     context: C & NoUnknownAttributes<C>;
+    /** Each destination the service calls, listing the entries whose headers it receives. */
+    destinations?: D & ValidDestinations<C, D>;
 }
 
 export interface ListenOptions {
@@ -43,14 +50,13 @@ export interface ListenOptions {
     onShutdownStart?: () => void | Promise<void>;
 }
 
-export interface Service<C extends ContextConfig> {
-    readonly context: Pick<Context<C>, 'run' | 'get' | 'getStore'>;
+export interface Service<C extends ContextConfig, D extends Destinations> {
+    readonly context: Pick<Context<C>, 'run' | 'get' | 'getStore'> & {
+        /** The headers for a call to `destination`, from the values it lists; empty outside a request. */
+        readonly getHeaders: GetHeaders<D>;
+    };
     /** Express middleware that fills the context, answering `400` for a request missing a required value. */
     readonly middleware: ReturnType<typeof createExpressMiddleware>;
-    /** Forwards every entry marked `forward`; for the service's own platform. */
-    readonly fetch: typeof fetch;
-    /** Forwards only entries marked `to: 'all'`; for third-party APIs. */
-    readonly fetchExternal: typeof fetch;
     readonly isShuttingDown: () => boolean;
     /** Cleanups run in the order registered, after the server has closed. */
     readonly onShutdown: (cleanup: CleanupFn) => void;
@@ -68,9 +74,10 @@ let configured = false;
  *
  * @throws Error on a second call; the process has one set of handlers and one server.
  */
-export function configureService<const C extends ContextConfig>(
-    options: ServiceOptions<C>,
-): Service<C> {
+export function configureService<
+    const C extends ContextConfig,
+    const D extends Destinations = Record<never, never>,
+>(options: ServiceOptions<C, D>): Service<C, D> {
     if (configured) {
         throw new Error('configureService can only be called once per process');
     }
@@ -79,6 +86,11 @@ export function configureService<const C extends ContextConfig>(
     configured = true;
 
     const context = configureContext<C>(options.context);
+    const getHeaders = createGetHeaders(
+        context,
+        options.context,
+        options.destinations ?? ({} as D & ValidDestinations<C, D>),
+    );
     const state = createShutdownState();
     const cleanups: CleanupFn[] = [];
     let listening = false;
@@ -118,10 +130,8 @@ export function configureService<const C extends ContextConfig>(
     };
 
     return {
-        context,
+        context: { ...context, getHeaders },
         middleware: createExpressMiddleware(context, { logger: logger.child('server', 'context') }),
-        fetch: createFetchWrapper(context),
-        fetchExternal: createFetchWrapper(context, { destination: 'external' }),
         isShuttingDown: state.isShuttingDown,
         onShutdown: (cleanup) => {
             cleanups.push(cleanup);

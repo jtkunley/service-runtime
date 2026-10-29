@@ -20,8 +20,8 @@ export interface ContextEntry {
     value: (request: ContextRequest) => string | undefined;
     /** Without a value the request is rejected, and `run()` throws. */
     required?: boolean;
-    /** Without it the value never leaves the service. */
-    forward?: { header: string; to: 'internal' | 'all' };
+    /** The header the value travels under, to the destinations that list it. */
+    header?: string;
 }
 
 export type ContextConfig = Readonly<Record<string, ContextEntry>>;
@@ -51,7 +51,6 @@ interface Resolution {
 }
 
 interface ContextInternals {
-    readonly config: ContextConfig;
     readonly resolve: (request: ContextRequest) => Resolution;
     readonly enter: <T>(values: Values, fn: () => T) => T;
 }
@@ -116,7 +115,6 @@ export function configureContext<const C extends ContextConfig>(
         getStore: () => storage.getStore() as ContextValues<C> | undefined,
     };
     internals.set(context, {
-        config,
         resolve,
         enter: (values, fn) => storage.run(values, fn),
     });

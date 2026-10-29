@@ -48,13 +48,18 @@ const service = configureService({
         tenantId: {
             value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
             required: true,
-            forward: { header: 'x-tenant-id', to: 'internal' },
+            header: 'x-tenant-id',
         },
         // Request threading: one ID across every service a request touches, so its logs join up.
         requestId: {
             value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-            forward: { header: 'x-request-id', to: 'all' },
+            header: 'x-request-id',
         },
+    },
+    destinations: {
+        internal: ['tenantId', 'requestId'],
+        // A third party: it never learns which tenant is calling.
+        payments: ['requestId'],
     },
 });
 
@@ -75,8 +80,10 @@ app.get('/headers', (req, res) => {
     res.json({ tenantId: req.get('x-tenant-id'), requestId: req.get('x-request-id') });
 });
 app.get('/call', async (req, res) => {
-    const fetchDownstream = req.query['external'] ? service.fetchExternal : service.fetch;
-    const downstream = await fetchDownstream(req.query['url'] as string);
+    const to = req.query['to'] === 'payments' ? 'payments' : 'internal';
+    const downstream = await fetch(req.query['url'] as string, {
+        headers: service.context.getHeaders(to),
+    });
     res.json({ context: service.context.getStore(), downstream: await downstream.json() });
 });
 app.get('/slow', async (req, res) => {

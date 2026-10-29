@@ -20,13 +20,14 @@ const CONTEXT = {
         value: (req: { headers: Readonly<Record<string, string | undefined>> }) =>
             req.headers['x-tenant-id'],
         required: true,
-        forward: { header: 'x-tenant-id', to: 'internal' },
+        header: 'x-tenant-id',
     },
     requestId: {
         value: () => 'req-1',
-        forward: { header: 'x-request-id', to: 'all' },
+        header: 'x-request-id',
     },
 } as const;
+const DESTINATIONS = { internal: ['tenantId', 'requestId'], payments: ['requestId'] } as const;
 
 function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
     const childLogger: ChildLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -47,7 +48,7 @@ describe('configureService', () => {
     const servers: Server[] = [];
 
     const configure = (logger: RootLogger = createMockRootLogger()) =>
-        configureService({ logger, context: CONTEXT });
+        configureService({ logger, context: CONTEXT, destinations: DESTINATIONS });
 
     /** Listens on a free port, returning the base URL and the server for cleanup. */
     const listen = async (
@@ -161,22 +162,31 @@ describe('configureService', () => {
         });
     });
 
-    describe('fetch', () => {
-        it.each([
-            ['fetch', { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1' }],
-            ['fetchExternal', { 'x-request-id': 'req-1' }],
-        ] as const)('%s forwards the values meant for its destination', async (method, sent) => {
-            const fetchSpy = vi
-                .spyOn(globalThis, 'fetch')
-                .mockResolvedValue(new Response(null, { status: 204 }));
+    describe('getHeaders', () => {
+        it('returns the headers each declared destination receives, in a request', () => {
             const service = configure();
 
-            await service.context.run({ headers: { 'x-tenant-id': 'tenant-1' } }, () =>
-                service[method]('https://api.example.com'),
-            );
+            service.context.run({ headers: { 'x-tenant-id': 'tenant-1' } }, () => {
+                expect(service.context.getHeaders('internal')).toEqual({
+                    'x-tenant-id': 'tenant-1',
+                    'x-request-id': 'req-1',
+                });
+                expect(service.context.getHeaders('payments')).toEqual({ 'x-request-id': 'req-1' });
+            });
+        });
 
-            const [, init] = fetchSpy.mock.calls[0]!;
-            expect(Object.fromEntries(new Headers(init?.headers))).toEqual(sent);
+        it('accepts only declared destinations', () => {
+            const service = configure();
+
+            // @ts-expect-error -- billing was never declared
+            expect(() => service.context.getHeaders('billing')).toThrow('Unknown destination');
+        });
+
+        it('has no destinations when none are declared', () => {
+            const service = configureService({ logger: createMockRootLogger(), context: CONTEXT });
+
+            // @ts-expect-error -- nothing was declared
+            expect(() => service.context.getHeaders('internal')).toThrow('Unknown destination');
         });
     });
 

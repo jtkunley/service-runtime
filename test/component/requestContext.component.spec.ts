@@ -90,13 +90,13 @@ describe('request context in a running service', () => {
         expect(received.requestId).toBe(context.requestId);
     });
 
-    it('sends a third-party API only the values forwarded to every destination', async () => {
+    it('sends a third-party destination only the values it lists', async () => {
         const [upstream, thirdParty] = await Promise.all([
             startService(),
             startService({ DEFAULT_TENANT_ID: 'their-tenant' }),
         ]);
 
-        const res = await fetch(`${upstream.url}/call?external=1&url=${thirdParty.url}/headers`, {
+        const res = await fetch(`${upstream.url}/call?to=payments&url=${thirdParty.url}/headers`, {
             headers: BOTH_IDS,
         });
 
