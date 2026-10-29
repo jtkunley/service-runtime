@@ -1,7 +1,7 @@
 {
     "name": "@jtkunley/service-runtime",
     "version": "1.0.0",
-    "description": "Request context, graceful shutdown, fatal error handling, and deployment tier checks for Node.js HTTP services.",
+    "description": "Request context, health probes, graceful shutdown, fatal error handling and deployment tier checks for Node.js HTTP services, wired by one call.",
     "keywords": [
         "asynclocalstorage",
         "request-context",

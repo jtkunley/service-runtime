@@ -4,8 +4,10 @@
 
 ### Features
 
-- **Graceful shutdown:** `setupGracefulShutdown` handles SIGTERM and SIGINT. It marks a shutdown state for readiness, runs an optional `onShutdownStart` hook, closes the HTTP server while closing keep-alive connections as they go idle, runs cleanup functions in order, and exits within a `forceExitMs` deadline. `createShutdownState` creates the state before the server listens.
-- **Fatal error handlers:** `registerFatalHandlers` logs an uncaught exception or unhandled rejection and exits with code 1.
+- **One entry point:** `configureService` registers the fatal error handlers and returns the service: its request context, Express middleware, context-aware `fetch` and `fetchExternal`, `onShutdown` for cleanups, and `listen`, which starts the server with health probes and graceful shutdown. The parts it is built from are kept private.
+- **Request context:** the service declares the values every request carries. Each entry has a function that works out its value when a request starts, and attributes for whether it is required and where it is forwarded downstream; an unknown attribute is a compile error. The middleware rejects a request missing a required value, and `context.run()` does the same for jobs and message consumers.
+- **Health probes:** `/readiness` and `/liveness` are answered before the app sees a request, so they never need context values. Readiness fails once shutdown starts; liveness never does.
+- **Graceful shutdown:** on SIGTERM or SIGINT, readiness fails, an optional `onShutdownStart` hook runs, the server closes while closing keep-alive connections as they go idle, cleanups run in order, and the process exits within a `forceExitMs` deadline.
+- **Fatal error handling:** an uncaught exception or unhandled rejection is logged and the process exits with code 1.
 - **Log flushing:** a `RootLogger` may have a `flush()`, which every exit, clean, forced or fatal, awaits for up to a second.
-- **Request context:** `configureContext` declares the values every request carries. Each entry has a function that works out its value when a request starts, and attributes for whether it is required and where it is forwarded downstream; an unknown attribute is a compile error. Express middleware fills the context and rejects a request missing a required value, `run()` does the same for jobs and message consumers, and `createFetchWrapper` forwards the values to internal or external destinations.
 - **Deployment tier:** `getTier`, `isNonProdTier` and `isProdTier`, also on the `@jtkunley/service-runtime/tier` subpath.
