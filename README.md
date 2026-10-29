@@ -72,12 +72,17 @@ const app = express();
 const logger = rootLogger.child('http', 'request');
 
 app.use(createExpressMiddleware({
-  getDefaultOrgId: () => process.env.ORG_ID, // optional single-tenant fallback
-  logger,                                     // logs { method, path } when org ID missing
+  getDefaultOrgId: () => process.env.ORG_ID, // single-tenant services only
+  logger,
 }));
 ```
 
-Extracts `x-org-id` and `x-request-id` from the request headers. Calls `run()` before invoking `next()`. Returns `400` if `orgId` is absent and no `getDefaultOrgId` fallback is provided. When `logger` is supplied, a `warn` is emitted on every rejected request including the HTTP method and path.
+Reads `x-org-id` and `x-request-id` from the request headers and calls `next()` inside `run()`, generating a request ID when there is none.
+
+- **Multi-tenant** (no `getDefaultOrgId`): the org ID must come from the caller. A request without one is answered `400` with `{ error: 'Missing required header: x-org-id' }` and never reaches `next()`.
+- **Single-tenant** (`getDefaultOrgId` returns an org): every request runs under that org, whatever its header says. There is only one tenant the service can serve, so a different header can't misroute data.
+
+With a `logger`, a missing request ID is logged as a `warn` and a rejected request as an `error`, both with the method, full path, IDs and user agent. A request missing both gets both lines.
 
 ### Koa middleware
 
@@ -160,10 +165,12 @@ IDs are trimmed, and a blank ID counts as absent: a blank `orgId` throws, and a 
 
 #### `createExpressMiddleware(opts?)`
 
+Takes `ContextMiddlewareOptions`:
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `getDefaultOrgId` | `() => string \| undefined` | — | Fallback when `x-org-id` header is absent. Returns `400` if no org ID and no fallback. |
-| `logger` | `{ warn(msg, data) }` | — | Optional. When provided, emits a `warn` with `{ method, path }` on every request rejected with `400`. Compatible with any `ChildLogger`. |
+| `getDefaultOrgId` | `() => string \| undefined` | — | Single-tenant: the org every request runs under, read on each request. A blank value counts as none. |
+| `logger` | `ChildLogger` (only `warn` and `error` are used) | — | Logs a missing request ID (`warn`) and a rejected request (`error`). |
 
 #### `createKoaMiddleware(opts?)`
 

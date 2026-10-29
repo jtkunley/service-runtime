@@ -53,8 +53,6 @@ describe('what each entry exports', () => {
                 'registerFatalHandlers',
                 'setupGracefulShutdown',
                 'REQUEST_ID_HEADER',
-                'MISSING_REQUEST_ID_WARN',
-                'MISSING_ORG_ERROR',
                 'ORG_ID_HEADER',
                 'createExpressMiddleware',
                 'createFetchWrapper',

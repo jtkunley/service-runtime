@@ -23,18 +23,9 @@ export {
     ORG_ID_HEADER,
     REQUEST_ID_HEADER,
 } from './lib/context/headers';
-export {
-    MISSING_ORG_ERROR,
-    MISSING_REQUEST_ID_WARN,
-} from './lib/context/middleware/resolveContext';
-export {
-    createExpressMiddleware,
-    type ExpressMiddlewareOptions,
-} from './lib/context/middleware/express';
-export {
-    createKoaMiddleware,
-    type KoaMiddlewareOptions,
-} from './lib/context/middleware/koa';
+export type { ContextMiddlewareOptions } from './lib/context/resolveContext';
+export { createExpressMiddleware } from './lib/context/express';
+export { createKoaMiddleware } from './lib/context/koa';
 export {
     createFetchWrapper,
     type FetchWrapperOptions,
