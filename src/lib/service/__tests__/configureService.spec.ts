@@ -141,6 +141,15 @@ describe('configureService', () => {
             expect(logger.child).toHaveBeenCalledWith('server', 'context');
             expect(logger.childLogger.error).toHaveBeenCalledOnce();
         });
+
+        it('exposes only the context functions apps call, not the ones the middleware uses', () => {
+            expect(Object.keys(configure().context)).toEqual([
+                'run',
+                'get',
+                'getStore',
+                'getHeaders',
+            ]);
+        });
     });
 
     describe('getHeaders', () => {

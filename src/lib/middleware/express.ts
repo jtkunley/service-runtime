@@ -1,6 +1,7 @@
 import type { IncomingHttpHeaders } from 'http';
-import type { Context, ContextConfig } from '../context/configureContext';
-import { resolveContext, type ContextMiddlewareOptions } from './resolveContext';
+import type { ConfiguredContext, ContextConfig } from '../context/configureContext';
+import type { ChildLogger } from '../shared/logger';
+import { resolveContext } from './resolveContext';
 
 interface Req {
     headers: IncomingHttpHeaders;
@@ -12,14 +13,14 @@ interface Res {
 }
 
 export function createExpressMiddleware<C extends ContextConfig>(
-    context: Context<C>,
-    opts: ContextMiddlewareOptions = {},
+    context: ConfiguredContext<C>,
+    logger: Pick<ChildLogger, 'error'>,
 ) {
     return (req: Req, res: Res, next: () => void): void => {
         const { headers, method, originalUrl } = req;
         // The full path, mount point included, without the query string, which can carry secrets such as tokens.
         const path = originalUrl.split('?')[0]!;
-        const result = resolveContext(context, { headers, method, path }, opts);
+        const result = resolveContext(context, { headers, method, path }, logger);
         if ('error' in result) {
             res.status(400).json(result);
             return;

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
-import { configureContext, contextInternals, type ContextRequest } from '../configureContext';
+import { configureContext, type ContextRequest } from '../configureContext';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -196,13 +196,5 @@ describe('configureContext', () => {
         it('get throws', () => {
             expect(() => makeContext().get('tenantId')).toThrow('No request context');
         });
-    });
-});
-
-describe('contextInternals', () => {
-    it('refuses an object that configureContext did not create', () => {
-        expect(() => contextInternals({})).toThrow(
-            new TypeError('Expected a context created by configureContext'),
-        );
     });
 });

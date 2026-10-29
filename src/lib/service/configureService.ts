@@ -60,7 +60,7 @@ export interface ListenOptions {
 }
 
 export interface Service<C extends ContextConfig, D extends Destinations> {
-    readonly context: Pick<Context<C>, 'run' | 'get' | 'getStore'> & {
+    readonly context: Context<C> & {
         /** The headers for a call to `destination`, from the values it lists; empty outside a request. */
         readonly getHeaders: GetHeaders<D>;
     };
@@ -157,9 +157,10 @@ export function configureService<
         return server.address() as AddressInfo;
     };
 
+    const { run, get, getStore } = context;
     return {
-        context: { ...context, getHeaders },
-        middleware: createExpressMiddleware(context, { logger: logger.child('server', 'context') }),
+        context: { run, get, getStore, getHeaders },
+        middleware: createExpressMiddleware(context, logger.child('server', 'context')),
         isShuttingDown: state.isShuttingDown,
         onShutdown: (cleanup) => {
             cleanups.push(cleanup);

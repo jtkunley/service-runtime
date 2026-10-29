@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { ChildLogger, RootLogger } from '../../shared/logger';
+import { registerFatalHandlers } from '../fatalHandlers';
 
 type FatalEvent = 'uncaughtException' | 'unhandledRejection';
 type Handler = (reason: unknown) => void;
@@ -14,7 +15,6 @@ function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
 }
 
 describe('registerFatalHandlers', () => {
-    let registerFatalHandlers: typeof import('../fatalHandlers.js').registerFatalHandlers;
     let before: Record<FatalEvent, unknown[]>;
     let order: string[];
 
@@ -24,8 +24,7 @@ describe('registerFatalHandlers', () => {
             .listeners(event)
             .filter((listener) => !before[event].includes(listener)) as unknown as Handler[];
 
-    beforeEach(async () => {
-        vi.resetModules();
+    beforeEach(() => {
         before = {
             uncaughtException: process.listeners('uncaughtException'),
             unhandledRejection: process.listeners('unhandledRejection'),
@@ -34,7 +33,6 @@ describe('registerFatalHandlers', () => {
         vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
             order.push(`exit ${String(code)}`);
         }) as typeof process.exit);
-        registerFatalHandlers = (await import('../fatalHandlers.js')).registerFatalHandlers;
     });
 
     afterEach(() => {
@@ -63,31 +61,6 @@ describe('registerFatalHandlers', () => {
             expect(root.child).toHaveBeenCalledWith('server', 'fatal');
             expect(added('uncaughtException')).toHaveLength(1);
             expect(added('unhandledRejection')).toHaveLength(1);
-        });
-
-        it('throws on a second call, registering nothing more', () => {
-            registerFatalHandlers(createMockRootLogger());
-            const second = createMockRootLogger();
-
-            expect(() => registerFatalHandlers(second)).toThrow(
-                'Fatal handlers are already registered (one per process)',
-            );
-            expect(second.child).not.toHaveBeenCalled();
-            expect(added('uncaughtException')).toHaveLength(1);
-            expect(added('unhandledRejection')).toHaveLength(1);
-        });
-
-        it('stays unregistered when the logger cannot make its child, so a retry still registers', () => {
-            const broken = createMockRootLogger();
-            vi.mocked(broken.child).mockImplementation(() => {
-                throw new Error('no child');
-            });
-
-            expect(() => registerFatalHandlers(broken)).toThrow('no child');
-            expect(added('uncaughtException')).toHaveLength(0);
-
-            registerFatalHandlers(createMockRootLogger());
-            expect(added('uncaughtException')).toHaveLength(1);
         });
     });
 

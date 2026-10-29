@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
 import express from 'express';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createExpressMiddleware } from '../express';
 import { configureContext } from '../../context/configureContext';
 
@@ -22,6 +22,10 @@ async function serve(
     return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
+beforeEach(() => {
+    logger.error.mockClear();
+});
+
 afterEach(async () => {
     await Promise.all(
         servers.splice(0).map(
@@ -38,9 +42,11 @@ const echoContext: express.RequestHandler = (_req, res) => {
     res.json(context.getStore() ?? null);
 };
 
-async function echoApp(opts?: Parameters<typeof createExpressMiddleware>[1]) {
+const logger = { error: vi.fn() };
+
+async function echoApp() {
     const app = express();
-    app.use(createExpressMiddleware(context, opts));
+    app.use(createExpressMiddleware(context, logger));
     app.get('/context', echoContext);
     return serve(app);
 }
@@ -75,7 +81,7 @@ describe('createExpressMiddleware in a real Express app', () => {
             res.json({ body: req.body as unknown, tenantId: context.getStore()?.tenantId });
         });
         const app = express();
-        app.use(createExpressMiddleware(context));
+        app.use(createExpressMiddleware(context, logger));
         app.use(express.json());
         app.use('/api', router);
         const url = await serve(app);
@@ -91,7 +97,7 @@ describe('createExpressMiddleware in a real Express app', () => {
 
     it('keeps concurrent requests apart', async () => {
         const app = express();
-        app.use(createExpressMiddleware(context));
+        app.use(createExpressMiddleware(context, logger));
         app.get('/context', async (_req, res) => {
             await new Promise((resolve) => setTimeout(resolve, Math.random() * 10));
             res.json(context.getStore() ?? null);
@@ -116,7 +122,7 @@ describe('createExpressMiddleware in a real Express app', () => {
     it('answers 400 with the error as JSON, never reaching the route, when the tenant ID is missing', async () => {
         const route = vi.fn(echoContext);
         const app = express();
-        app.use(createExpressMiddleware(context));
+        app.use(createExpressMiddleware(context, logger));
         app.get('/context', route);
         const url = await serve(app);
 
@@ -129,9 +135,8 @@ describe('createExpressMiddleware in a real Express app', () => {
     });
 
     it('logs the full path when mounted on a router, without the query string', async () => {
-        const logger = { warn: vi.fn(), error: vi.fn() };
         const router = express.Router();
-        router.use(createExpressMiddleware(context, { logger }));
+        router.use(createExpressMiddleware(context, logger));
         const app = express();
         app.use('/api', router);
         const url = await serve(app);

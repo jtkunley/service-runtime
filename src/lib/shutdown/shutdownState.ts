@@ -1,7 +1,4 @@
-/**
- * Separate from `setupGracefulShutdown` so the app can create it before the
- * server listens and wire readiness to it up front.
- */
+/** Created with the service, so `isShuttingDown` works before it listens. */
 export interface ShutdownState {
     readonly isShuttingDown: () => boolean;
     readonly begin: () => void;

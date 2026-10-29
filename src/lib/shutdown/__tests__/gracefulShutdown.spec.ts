@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http, { type Server } from 'http';
 import type { AddressInfo } from 'net';
 import type { ChildLogger, RootLogger } from '../../shared/logger';
+import {
+    setupGracefulShutdown,
+    type CleanupFn,
+    type GracefulShutdownOptions,
+} from '../gracefulShutdown';
 import { createShutdownState } from '../shutdownState';
 
 const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGQUIT'] as const;
@@ -24,8 +29,16 @@ function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
     return { child: vi.fn(() => childLogger), childLogger };
 }
 
+function setup(
+    server: Server,
+    root: RootLogger,
+    cleanups: CleanupFn[] = [],
+    options: Partial<GracefulShutdownOptions> = {},
+): void {
+    setupGracefulShutdown(server, root, cleanups, { state: createShutdownState(), ...options });
+}
+
 describe('setupGracefulShutdown', () => {
-    let setup: typeof import('../gracefulShutdown.js').setupGracefulShutdown;
     let before: Map<Signal, Listeners>;
     let exits: number[];
     let exited: Promise<number>;
@@ -33,8 +46,7 @@ describe('setupGracefulShutdown', () => {
     const added = (signal: Signal): Listeners =>
         process.listeners(signal).filter((listener) => !before.get(signal)?.includes(listener));
 
-    beforeEach(async () => {
-        vi.resetModules();
+    beforeEach(() => {
         before = new Map(SIGNALS.map((s) => [s, process.listeners(s)]));
         exits = [];
         let firstExit = (_code: number): void => undefined;
@@ -43,7 +55,6 @@ describe('setupGracefulShutdown', () => {
             exits.push(code);
             firstExit(code);
         }) as typeof process.exit);
-        setup = (await import('../gracefulShutdown.js')).setupGracefulShutdown;
     });
 
     afterEach(() => {
@@ -67,24 +78,6 @@ describe('setupGracefulShutdown', () => {
             expect(added('SIGINT')).toHaveLength(1);
             expect(added('SIGQUIT')).toHaveLength(0);
         });
-
-        it('refuses a second call, leaving the first registration in place', async () => {
-            const first = createMockServer();
-            setup(first, createMockRootLogger());
-            const secondRoot = createMockRootLogger();
-            const second = createMockServer();
-
-            expect(() => setup(second, secondRoot)).toThrow(
-                'Graceful shutdown is already configured (one per process)',
-            );
-            expect(secondRoot.child).not.toHaveBeenCalled();
-            expect(added('SIGTERM')).toHaveLength(1);
-
-            process.emit('SIGTERM', 'SIGTERM');
-            expect(await exited).toBe(0);
-            expect(first.close).toHaveBeenCalledOnce();
-            expect(second.close).not.toHaveBeenCalled();
-        });
     });
 
     describe('the shutdown sequence', () => {
@@ -96,7 +89,7 @@ describe('setupGracefulShutdown', () => {
                 order.push(`close, shutting down: ${String(state.isShuttingDown())}`);
                 cb();
             });
-            const shutdown = setup(
+            setup(
                 server,
                 root,
                 [
@@ -114,11 +107,11 @@ describe('setupGracefulShutdown', () => {
                     },
                 },
             );
-            expect(shutdown.isShuttingDown()).toBe(false);
+            expect(state.isShuttingDown()).toBe(false);
 
             process.emit('SIGTERM', 'SIGTERM');
 
-            expect(shutdown.isShuttingDown()).toBe(true);
+            expect(state.isShuttingDown()).toBe(true);
             expect(await exited).toBe(0);
             expect(order).toEqual([
                 'start',
@@ -150,16 +143,6 @@ describe('setupGracefulShutdown', () => {
                 'Received shutdown signal, closing server...',
                 { signal: 'SIGINT' },
             );
-        });
-
-        it('answers isShuttingDown from a state of its own when none is given', async () => {
-            const shutdown = setup(createMockServer(), createMockRootLogger());
-            expect(shutdown.isShuttingDown()).toBe(false);
-
-            process.emit('SIGTERM', 'SIGTERM');
-
-            expect(shutdown.isShuttingDown()).toBe(true);
-            await exited;
         });
 
         it('still shuts down when the app marked the state itself beforehand', async () => {

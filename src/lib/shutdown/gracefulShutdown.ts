@@ -2,7 +2,7 @@ import type { Server } from 'http';
 import { toError } from '../shared/errors';
 import type { LogData, RootLogger } from '../shared/logger';
 import { exitAfterFlush } from '../shared/exitAfterFlush';
-import { createShutdownState, type ShutdownState } from './shutdownState';
+import type { ShutdownState } from './shutdownState';
 
 const FORCE_EXIT_MS = 30_000;
 const SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
@@ -27,34 +27,21 @@ export interface GracefulShutdownOptions {
      * delay so it stops routing here first.
      */
     onShutdownStart?: () => void | Promise<void>;
-    state?: ShutdownState;
+    /** Begun on the first signal, which fails readiness. */
+    state: ShutdownState;
 }
-
-export interface GracefulShutdown {
-    /** A function property, so it can be passed on its own. */
-    readonly isShuttingDown: () => boolean;
-}
-
-let registered = false;
 
 /**
  * Listeners stay registered after the first signal, so a repeated signal is
  * ignored instead of taking Node's default exit in the middle of cleanup.
- *
- * @throws Error on a second call, whose server and cleanups would otherwise be silently ignored.
  */
 export function setupGracefulShutdown(
     server: Server,
     rootLogger: RootLogger,
-    cleanupFns: CleanupFn[] = [],
-    options: GracefulShutdownOptions = {},
-): GracefulShutdown {
-    const { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state = createShutdownState() } = options;
-    if (registered) {
-        throw new Error('Graceful shutdown is already configured (one per process)');
-    }
+    cleanupFns: readonly CleanupFn[],
+    { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state }: GracefulShutdownOptions,
+): void {
     const logger = rootLogger.child('server', 'shutdown');
-    registered = true;
 
     const closeServer = (onError: (err: Error) => void): Promise<void> =>
         new Promise((resolve) => {
@@ -127,5 +114,4 @@ export function setupGracefulShutdown(
     for (const signal of SHUTDOWN_SIGNALS) {
         process.on(signal, onSignal);
     }
-    return { isShuttingDown: state.isShuttingDown };
 }

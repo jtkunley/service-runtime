@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import type { IncomingHttpHeaders } from 'http';
 import { describe, expect, it, vi } from 'vitest';
 import { configureContext } from '../../context/configureContext';
-import { resolveContext, type ContextMiddlewareOptions } from '../resolveContext';
+import { resolveContext } from '../resolveContext';
 
 const context = configureContext({
     tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },
@@ -13,11 +13,11 @@ const context = configureContext({
 
 const BOTH_REQUIRED = { 'x-tenant-id': 'tenant-1', 'x-region': 'eu' };
 
-const resolve = (headers: IncomingHttpHeaders, opts: ContextMiddlewareOptions = {}) =>
+const resolve = (headers: IncomingHttpHeaders, logger = { error: vi.fn() }) =>
     resolveContext(
         context,
         { headers: { 'user-agent': 'agent/1', ...headers }, method: 'POST', path: '/orders' },
-        opts,
+        logger,
     );
 
 describe('resolveContext', () => {
@@ -35,7 +35,7 @@ describe('resolveContext', () => {
     it('logs nothing for a request with every required value', () => {
         const logger = { error: vi.fn() };
 
-        resolve(BOTH_REQUIRED, { logger });
+        resolve(BOTH_REQUIRED, logger);
 
         expect(logger.error).not.toHaveBeenCalled();
     });
@@ -52,7 +52,7 @@ describe('resolveContext', () => {
 
         resolve(
             { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1', 'accept-language': 'en' },
-            { logger },
+            logger,
         );
 
         expect(logger.error).toHaveBeenCalledWith(message, new Error(message), {

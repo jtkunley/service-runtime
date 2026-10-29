@@ -38,10 +38,10 @@ export type ContextValues<C extends ContextConfig> = {
 
 export interface Context<C extends ContextConfig> {
     /** @throws Error naming every required entry without a value, before `fn` runs. */
-    run<T>(source: ContextSource, fn: () => T): T;
+    readonly run: <T>(source: ContextSource, fn: () => T) => T;
     /** @throws Error outside a context. */
-    get<K extends keyof C & string>(name: K): ContextValues<C>[K];
-    getStore(): ContextValues<C> | undefined;
+    readonly get: <K extends keyof C & string>(name: K) => ContextValues<C>[K];
+    readonly getStore: () => ContextValues<C> | undefined;
 }
 
 type Values = Readonly<Record<string, string | undefined>>;
@@ -51,12 +51,11 @@ interface Resolution {
     missing: string[];
 }
 
-interface ContextInternals {
+/** The context plus what the middleware needs, which the service keeps to itself. */
+export interface ConfiguredContext<C extends ContextConfig> extends Context<C> {
     readonly resolve: (request: ContextRequest) => Resolution;
     readonly enter: <T>(values: Values, fn: () => T) => T;
 }
-
-const internals = new WeakMap<object, ContextInternals>();
 
 /** A blank value counts as absent, so a header sent empty is treated as not sent. */
 function normalize(value: string | undefined): string | undefined {
@@ -82,7 +81,7 @@ export function missingValuesMessage(missing: readonly string[]): string {
  */
 export function configureContext<const C extends ContextConfig>(
     config: C & NoUnknownAttributes<C>,
-): Context<C> {
+): ConfiguredContext<C> {
     const storage = new AsyncLocalStorage<Values>();
     const entries = Object.entries(config);
 
@@ -104,7 +103,7 @@ export function configureContext<const C extends ContextConfig>(
         return values;
     };
 
-    const context: Context<C> = {
+    return {
         run(source, fn) {
             const { values, missing } = resolve(toContextRequest(source));
             // Fail loud at the boundary: work that runs without a required value,
@@ -114,16 +113,7 @@ export function configureContext<const C extends ContextConfig>(
         },
         get: (name) => current()[name] as ContextValues<C>[typeof name],
         getStore: () => storage.getStore() as ContextValues<C> | undefined,
-    };
-    internals.set(context, {
         resolve,
         enter: (values, fn) => storage.run(values, fn),
-    });
-    return context;
-}
-
-export function contextInternals(context: object): ContextInternals {
-    const found = internals.get(context);
-    if (!found) throw new TypeError('Expected a context created by configureContext');
-    return found;
+    };
 }
