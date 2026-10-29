@@ -1,5 +1,5 @@
 import type { IncomingHttpHeaders } from 'http';
-import type { Context, ContextConfig } from '../configureContext';
+import type { Context, ContextConfig } from '../context/configureContext';
 import { resolveContext, type ContextMiddlewareOptions } from './resolveContext';
 
 interface Req {

@@ -447,7 +447,7 @@ npm run build           # compile the publishable package into dist/
 src/
   index.ts                 the root entry point
   lib/context/             configureContext, the request context itself
-  lib/context/middleware/  Express and Koa middleware that fill the context
+  lib/middleware/          Express and Koa middleware that fill the context
   lib/fetch/               fetch wrapper that forwards context values downstream
   lib/lifecycle/           graceful shutdown, shutdown state, fatal error handlers
   lib/cron/                createCron, the /cron entry point

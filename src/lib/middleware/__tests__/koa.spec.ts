@@ -4,7 +4,7 @@ import type { AddressInfo } from 'net';
 import Koa from 'koa';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKoaMiddleware } from '../koa';
-import { configureContext } from '../../configureContext';
+import { configureContext } from '../../context/configureContext';
 
 const context = configureContext({
     tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },

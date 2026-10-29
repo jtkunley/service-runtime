@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { IncomingHttpHeaders } from 'http';
 import { describe, expect, it, vi } from 'vitest';
-import { configureContext } from '../../configureContext';
+import { configureContext } from '../../context/configureContext';
 import { resolveContext, type ContextMiddlewareOptions } from '../resolveContext';
 
 const context = configureContext({

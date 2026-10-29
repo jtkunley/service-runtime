@@ -4,7 +4,7 @@ import type { AddressInfo } from 'net';
 import express from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createExpressMiddleware } from '../express';
-import { configureContext } from '../../configureContext';
+import { configureContext } from '../../context/configureContext';
 
 const context = configureContext({
     tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },

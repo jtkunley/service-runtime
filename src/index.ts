@@ -18,9 +18,9 @@ export {
     type ContextSource,
     type ContextValues,
 } from './lib/context/configureContext';
-export type { ContextMiddlewareOptions } from './lib/context/middleware/resolveContext';
-export { createExpressMiddleware } from './lib/context/middleware/express';
-export { createKoaMiddleware } from './lib/context/middleware/koa';
+export type { ContextMiddlewareOptions } from './lib/middleware/resolveContext';
+export { createExpressMiddleware } from './lib/middleware/express';
+export { createKoaMiddleware } from './lib/middleware/koa';
 export { createFetchWrapper, type FetchWrapperOptions } from './lib/fetch/fetchWrapper';
 
 export {

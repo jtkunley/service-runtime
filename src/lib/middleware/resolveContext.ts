@@ -1,12 +1,12 @@
 import type { IncomingHttpHeaders } from 'http';
-import type { ChildLogger } from '../../shared/logger';
+import type { ChildLogger } from '../shared/logger';
 import {
     contextInternals,
     missingValuesMessage,
     toContextRequest,
     type Context,
     type ContextConfig,
-} from '../configureContext';
+} from '../context/configureContext';
 
 export interface ContextMiddlewareOptions {
     logger?: Pick<ChildLogger, 'error'>;
