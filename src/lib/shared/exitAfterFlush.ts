@@ -1,4 +1,4 @@
-import type { RootLogger } from '../shared/logger';
+import type { RootLogger } from './logger';
 
 /** Short, because it runs after the decision to exit, and past the shutdown deadline for a forced exit. */
 const FLUSH_TIMEOUT_MS = 1_000;

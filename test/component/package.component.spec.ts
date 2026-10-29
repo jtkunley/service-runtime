@@ -28,12 +28,12 @@ describe('the installed package', () => {
     });
 
     it.each([
-        '/lifecycle',
+        '/shutdown',
         '/context',
         '/src',
         '/src/index',
         '/cron',
-        '/src/lib/lifecycle/gracefulShutdown.js',
+        '/src/lib/shutdown/gracefulShutdown.js',
     ])('does not expose @jtkunley/service-runtime%s', (subpath) => {
         expect(() => consumerRequire.resolve(`@jtkunley/service-runtime${subpath}`)).toThrow(
             expect.objectContaining({ code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' }) as Error,

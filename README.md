@@ -356,9 +356,10 @@ src/
   lib/context/             configureContext, the request context itself
   lib/middleware/          Express middleware that fills the context
   lib/fetch/               fetch wrapper that forwards context values downstream
-  lib/lifecycle/           graceful shutdown, shutdown state, fatal error handlers
+  lib/shutdown/            graceful shutdown and the shutdown state
+  lib/fatal/               fatal error handlers
   lib/tier/                deployment tier checks, the /tier entry point
-  lib/shared/              logger types and error helpers
+  lib/shared/              logger types, error helpers, flushing the logger before exit
   **/__tests__/            unit tests, one spec per source file
 test/component/            component tests against the built package
 ```

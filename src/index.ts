@@ -5,9 +5,9 @@ export {
     type CleanupFn,
     type GracefulShutdown,
     type GracefulShutdownOptions,
-} from './lib/lifecycle/gracefulShutdown';
-export { createShutdownState, type ShutdownState } from './lib/lifecycle/shutdownState';
-export { registerFatalHandlers } from './lib/lifecycle/fatalHandlers';
+} from './lib/shutdown/gracefulShutdown';
+export { createShutdownState, type ShutdownState } from './lib/shutdown/shutdownState';
+export { registerFatalHandlers } from './lib/fatal/fatalHandlers';
 
 export {
     configureContext,

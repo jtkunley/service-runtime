@@ -1,6 +1,6 @@
 import { toError } from '../shared/errors';
 import type { RootLogger } from '../shared/logger';
-import { exitAfterFlush } from './exitAfterFlush';
+import { exitAfterFlush } from '../shared/exitAfterFlush';
 
 let registered = false;
 

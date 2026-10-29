@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { RootLogger } from '../../shared/logger';
+import type { RootLogger } from '../logger';
 import { exitAfterFlush } from '../exitAfterFlush';
 
 const rootLogger = (flush?: () => Promise<void>): RootLogger => ({

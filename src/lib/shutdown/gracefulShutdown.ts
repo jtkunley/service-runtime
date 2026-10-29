@@ -1,7 +1,7 @@
 import type { Server } from 'http';
 import { toError } from '../shared/errors';
 import type { LogData, RootLogger } from '../shared/logger';
-import { exitAfterFlush } from './exitAfterFlush';
+import { exitAfterFlush } from '../shared/exitAfterFlush';
 import { createShutdownState, type ShutdownState } from './shutdownState';
 
 const FORCE_EXIT_MS = 30_000;
