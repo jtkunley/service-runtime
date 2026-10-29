@@ -145,5 +145,4 @@ describe('createExpressMiddleware in a real Express app', () => {
 
         expect(await res.json()).toMatchObject({ orgId: 'default-org' });
     });
-
 });

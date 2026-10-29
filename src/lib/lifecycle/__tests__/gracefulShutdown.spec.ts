@@ -8,9 +8,7 @@ const SIGNALS = ['SIGTERM', 'SIGINT', 'SIGQUIT'] as const;
 type Signal = (typeof SIGNALS)[number];
 type Listeners = ReturnType<typeof process.listeners>;
 
-function createMockServer(
-    close: (cb: (err?: Error) => void) => void = (cb) => cb(),
-): Server {
+function createMockServer(close: (cb: (err?: Error) => void) => void = (cb) => cb()): Server {
     return {
         close: vi.fn(close),
         closeIdleConnections: vi.fn(),
@@ -33,9 +31,7 @@ describe('setupGracefulShutdown', () => {
     let exited: Promise<number>;
 
     const added = (signal: Signal): Listeners =>
-        process
-            .listeners(signal)
-            .filter((listener) => !before.get(signal)?.includes(listener));
+        process.listeners(signal).filter((listener) => !before.get(signal)?.includes(listener));
 
     beforeEach(async () => {
         vi.resetModules();
@@ -150,10 +146,9 @@ describe('setupGracefulShutdown', () => {
                 'Received shutdown signal, closing server...',
                 { signal: 'SIGTERM' },
             );
-            expect(root.childLogger.info).toHaveBeenLastCalledWith(
-                'Graceful shutdown complete',
-                { signal: 'SIGTERM' },
-            );
+            expect(root.childLogger.info).toHaveBeenLastCalledWith('Graceful shutdown complete', {
+                signal: 'SIGTERM',
+            });
             expect(root.childLogger.error).not.toHaveBeenCalled();
         });
 
@@ -328,31 +323,28 @@ describe('setupGracefulShutdown', () => {
         it.each([
             [undefined, 30_000],
             [5_000, 5_000],
-        ])(
-            'forces exit 1 when shutdown hangs, at forceExitMs %s',
-            (forceExitMs, deadline) => {
-                vi.useFakeTimers();
-                const root = createMockRootLogger();
-                setup(
-                    createMockServer(() => undefined),
-                    root,
-                    [],
-                    forceExitMs === undefined ? {} : { forceExitMs },
-                );
+        ])('forces exit 1 when shutdown hangs, at forceExitMs %s', (forceExitMs, deadline) => {
+            vi.useFakeTimers();
+            const root = createMockRootLogger();
+            setup(
+                createMockServer(() => undefined),
+                root,
+                [],
+                forceExitMs === undefined ? {} : { forceExitMs },
+            );
 
-                process.emit('SIGTERM', 'SIGTERM');
-                vi.advanceTimersByTime(deadline - 1);
-                expect(exits).toEqual([]);
-                vi.advanceTimersByTime(1);
+            process.emit('SIGTERM', 'SIGTERM');
+            vi.advanceTimersByTime(deadline - 1);
+            expect(exits).toEqual([]);
+            vi.advanceTimersByTime(1);
 
-                expect(exits).toEqual([1]);
-                expect(root.childLogger.error).toHaveBeenCalledWith(
-                    'Graceful shutdown timed out, forcing exit',
-                    new Error('Graceful shutdown timed out'),
-                    { signal: 'SIGTERM' },
-                );
-            },
-        );
+            expect(exits).toEqual([1]);
+            expect(root.childLogger.error).toHaveBeenCalledWith(
+                'Graceful shutdown timed out, forcing exit',
+                new Error('Graceful shutdown timed out'),
+                { signal: 'SIGTERM' },
+            );
+        });
 
         it('cancels the forced exit once shutdown completes', async () => {
             vi.useFakeTimers();
@@ -382,53 +374,47 @@ describe('setupGracefulShutdown', () => {
             expect(server.closeIdleConnections).toHaveBeenCalledTimes(3);
         });
 
-        it(
-            'closes a keep-alive connection whose response finishes after the signal, long before the keep-alive timeout',
-            async () => {
-                let release = (): void => undefined;
-                const released = new Promise<void>((resolve) => (release = resolve));
-                let arrived = (): void => undefined;
-                const hasArrived = new Promise<void>(
-                    (resolve) => (arrived = resolve),
-                );
-                const server = http.createServer((_req, res) => {
-                    arrived();
-                    void released.then(() => res.end('done'));
+        it('closes a keep-alive connection whose response finishes after the signal, long before the keep-alive timeout', async () => {
+            let release = (): void => undefined;
+            const released = new Promise<void>((resolve) => (release = resolve));
+            let arrived = (): void => undefined;
+            const hasArrived = new Promise<void>((resolve) => (arrived = resolve));
+            const server = http.createServer((_req, res) => {
+                arrived();
+                void released.then(() => res.end('done'));
+            });
+            server.keepAliveTimeout = 65_000;
+            await new Promise<void>((resolve) => server.listen(0, resolve));
+            const { port } = server.address() as AddressInfo;
+            const cleanup = vi.fn();
+            setup(server, createMockRootLogger(), [cleanup], {
+                forceExitMs: 10_000,
+            });
+            const agent = new http.Agent({ keepAlive: true });
+            try {
+                const body = new Promise<string>((resolve, reject) => {
+                    http.get({ port, agent }, (res) => {
+                        let text = '';
+                        res.setEncoding('utf8');
+                        res.on('data', (chunk: string) => (text += chunk));
+                        res.on('end', () => resolve(text));
+                    }).on('error', reject);
                 });
-                server.keepAliveTimeout = 65_000;
-                await new Promise<void>((resolve) => server.listen(0, resolve));
-                const { port } = server.address() as AddressInfo;
-                const cleanup = vi.fn();
-                setup(server, createMockRootLogger(), [cleanup], {
-                    forceExitMs: 10_000,
-                });
-                const agent = new http.Agent({ keepAlive: true });
-                try {
-                    const body = new Promise<string>((resolve, reject) => {
-                        http.get({ port, agent }, (res) => {
-                            let text = '';
-                            res.setEncoding('utf8');
-                            res.on('data', (chunk: string) => (text += chunk));
-                            res.on('end', () => resolve(text));
-                        }).on('error', reject);
-                    });
-                    await hasArrived;
+                await hasArrived;
 
-                    process.emit('SIGTERM', 'SIGTERM');
-                    const signalledAt = Date.now();
-                    release();
+                process.emit('SIGTERM', 'SIGTERM');
+                const signalledAt = Date.now();
+                release();
 
-                    expect(await body).toBe('done');
-                    expect(await exited).toBe(0);
-                    expect(cleanup).toHaveBeenCalledOnce();
-                    expect(Date.now() - signalledAt).toBeLessThan(3_000);
-                } finally {
-                    release();
-                    agent.destroy();
-                    server.closeAllConnections();
-                }
-            },
-            10_000,
-        );
+                expect(await body).toBe('done');
+                expect(await exited).toBe(0);
+                expect(cleanup).toHaveBeenCalledOnce();
+                expect(Date.now() - signalledAt).toBeLessThan(3_000);
+            } finally {
+                release();
+                agent.destroy();
+                server.closeAllConnections();
+            }
+        }, 10_000);
     });
 });

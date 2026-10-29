@@ -6,9 +6,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 describe('run', () => {
     it('returns what the function returns, a promise included', async () => {
         expect(run({ orgId: 'org-1' }, () => 42)).toBe(42);
-        await expect(
-            run({ orgId: 'org-1' }, () => Promise.resolve('done')),
-        ).resolves.toBe('done');
+        await expect(run({ orgId: 'org-1' }, () => Promise.resolve('done'))).resolves.toBe('done');
     });
 
     it('lets an error from the function propagate and ends the context', () => {
@@ -29,32 +27,24 @@ describe('run', () => {
         });
     });
 
-    it.each(['', '   '])(
-        'refuses an orgId of %j before running the function',
-        (orgId) => {
-            let ran = false;
-            expect(() =>
-                run({ orgId }, () => {
-                    ran = true;
-                }),
-            ).toThrow('orgId must not be empty');
-            expect(ran).toBe(false);
-        },
-    );
+    it.each(['', '   '])('refuses an orgId of %j before running the function', (orgId) => {
+        let ran = false;
+        expect(() =>
+            run({ orgId }, () => {
+                ran = true;
+            }),
+        ).toThrow('orgId must not be empty');
+        expect(ran).toBe(false);
+    });
 
-    it.each([undefined, '', '   '])(
-        'generates a UUID requestId when given %j',
-        (requestId) => {
-            run({ orgId: 'org-1', requestId }, () => {
-                expect(getRequestId()).toMatch(UUID);
-            });
-        },
-    );
+    it.each([undefined, '', '   '])('generates a UUID requestId when given %j', (requestId) => {
+        run({ orgId: 'org-1', requestId }, () => {
+            expect(getRequestId()).toMatch(UUID);
+        });
+    });
 
     it('generates a different requestId for each run', () => {
-        const ids = [1, 2].map(() =>
-            run({ orgId: 'org-1' }, () => getRequestId()),
-        );
+        const ids = [1, 2].map(() => run({ orgId: 'org-1' }, () => getRequestId()));
         expect(ids[0]).not.toBe(ids[1]);
     });
 });

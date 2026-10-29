@@ -6,9 +6,7 @@ export interface FetchWrapperOptions {
     requestId?: boolean;
 }
 
-export function createFetchWrapper(
-    options: FetchWrapperOptions = {},
-): typeof fetch {
+export function createFetchWrapper(options: FetchWrapperOptions = {}): typeof fetch {
     const { orgId = true, requestId = true } = options;
 
     return (input, init) => {
@@ -18,8 +16,7 @@ export function createFetchWrapper(
         }
 
         const existing = new Headers(
-            init?.headers ??
-                (input instanceof Request ? input.headers : undefined),
+            init?.headers ?? (input instanceof Request ? input.headers : undefined),
         );
         if (orgId) {
             existing.set(ORG_ID_HEADER, store.orgId);

@@ -59,12 +59,15 @@ describe('resolveContext', () => {
         });
     });
 
-    it.each([undefined, '', '   '])('leaves the request ID undefined when given %j', (requestId) => {
-        expect(resolve({ [ORG_ID_HEADER]: 'org-1', [REQUEST_ID_HEADER]: requestId })).toEqual({
-            orgId: 'org-1',
-            requestId: undefined,
-        });
-    });
+    it.each([undefined, '', '   '])(
+        'leaves the request ID undefined when given %j',
+        (requestId) => {
+            expect(resolve({ [ORG_ID_HEADER]: 'org-1', [REQUEST_ID_HEADER]: requestId })).toEqual({
+                orgId: 'org-1',
+                requestId: undefined,
+            });
+        },
+    );
 
     describe('logging', () => {
         it('logs nothing for a request with both IDs', () => {
@@ -111,7 +114,11 @@ describe('resolveContext', () => {
             resolve({}, { logger });
 
             expect(logger.warn).toHaveBeenCalledWith(MISSING_REQUEST_ID, expect.any(Object));
-            expect(logger.error).toHaveBeenCalledWith(MISSING_ORG, expect.any(Error), expect.any(Object));
+            expect(logger.error).toHaveBeenCalledWith(
+                MISSING_ORG,
+                expect.any(Error),
+                expect.any(Object),
+            );
         });
 
         it('works without a logger', () => {

@@ -13,10 +13,7 @@ export function normalizeId(id: string | undefined): string | undefined {
     return id?.trim() || undefined;
 }
 
-export function run<T>(
-    ctx: { orgId: string; requestId?: string },
-    fn: () => T,
-): T {
+export function run<T>(ctx: { orgId: string; requestId?: string }, fn: () => T): T {
     const orgId = normalizeId(ctx.orgId);
     // Fail loud at the boundary — an empty org ID would silently scope all
     // downstream data access to nothing or the wrong tenant.

@@ -22,9 +22,7 @@ describe('registerFatalHandlers', () => {
     const added = (event: FatalEvent): Handler[] =>
         process
             .listeners(event)
-            .filter(
-                (listener) => !before[event].includes(listener),
-            ) as unknown as Handler[];
+            .filter((listener) => !before[event].includes(listener)) as unknown as Handler[];
 
     beforeEach(async () => {
         vi.resetModules();
@@ -36,8 +34,7 @@ describe('registerFatalHandlers', () => {
         vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
             order.push(`exit ${String(code)}`);
         }) as typeof process.exit);
-        registerFatalHandlers = (await import('../fatalHandlers.js'))
-            .registerFatalHandlers;
+        registerFatalHandlers = (await import('../fatalHandlers.js')).registerFatalHandlers;
     });
 
     afterEach(() => {
@@ -137,9 +134,7 @@ describe('registerFatalHandlers', () => {
         it('still exits 1 when the reason cannot be turned into a string', () => {
             registerFatalHandlers(createMockRootLogger());
 
-            expect(() => added('uncaughtException')[0]?.(Object.create(null))).toThrow(
-                TypeError,
-            );
+            expect(() => added('uncaughtException')[0]?.(Object.create(null))).toThrow(TypeError);
             expect(order).toEqual(['exit 1']);
         });
     });

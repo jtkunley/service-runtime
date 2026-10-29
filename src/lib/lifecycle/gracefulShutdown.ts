@@ -45,18 +45,12 @@ export function setupGracefulShutdown(
     cleanupFns: CleanupFn[] = [],
     options: GracefulShutdownOptions = {},
 ): GracefulShutdown {
-    const {
-        forceExitMs = FORCE_EXIT_MS,
-        onShutdownStart,
-        state = createShutdownState(),
-    } = options;
+    const { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state = createShutdownState() } = options;
     if (!Number.isInteger(forceExitMs) || forceExitMs <= 0) {
         throw new RangeError('forceExitMs must be a positive integer');
     }
     if (registered) {
-        throw new Error(
-            'Graceful shutdown is already configured (one per process)',
-        );
+        throw new Error('Graceful shutdown is already configured (one per process)');
     }
     const logger = rootLogger.child('server', 'shutdown');
     registered = true;

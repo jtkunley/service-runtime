@@ -16,10 +16,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 /** The request fetch was asked for, resolved the way fetch itself resolves it. */
 const sentRequest = (): Request => {
-    const [input, init] = fetchMock.mock.calls[0] as [
-        string | URL | Request,
-        RequestInit?,
-    ];
+    const [input, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit?];
     return new Request(input, init);
 };
 
@@ -78,9 +75,7 @@ describe('createFetchWrapper', () => {
 
     it('keeps a Request input’s method and body', async () => {
         await run(CTX, () =>
-            createFetchWrapper()(
-                new Request(URL_, { method: 'POST', body: 'payload' }),
-            ),
+            createFetchWrapper()(new Request(URL_, { method: 'POST', body: 'payload' })),
         );
 
         const request = sentRequest();
@@ -91,10 +86,9 @@ describe('createFetchWrapper', () => {
 
     it('lets init.headers win over a Request input’s headers, like fetch itself', async () => {
         await run(CTX, () =>
-            createFetchWrapper()(
-                new Request(URL_, { headers: { 'x-from': 'request' } }),
-                { headers: { 'x-from': 'init' } },
-            ),
+            createFetchWrapper()(new Request(URL_, { headers: { 'x-from': 'request' } }), {
+                headers: { 'x-from': 'init' },
+            }),
         );
 
         expect(sentRequest().headers.get('x-from')).toBe('init');
@@ -118,11 +112,20 @@ describe('createFetchWrapper', () => {
         const sources: [string, () => [string | URL | Request, RequestInit?]][] = [
             ['no init', () => [URL_]],
             ['an init.headers object', () => [URL_, { headers: { authorization: 'Bearer t' } }]],
-            ['an init.headers Headers', () => [URL_, { headers: new Headers({ authorization: 'Bearer t' }) }]],
+            [
+                'an init.headers Headers',
+                () => [URL_, { headers: new Headers({ authorization: 'Bearer t' }) }],
+            ],
             ['init.headers tuples', () => [URL_, { headers: [['authorization', 'Bearer t']] }]],
             ['a Request', () => [new Request(URL_, { headers: { authorization: 'Bearer t' } })]],
-            ['a Request with an empty init', () => [new Request(URL_, { headers: { authorization: 'Bearer t' } }), {}]],
-            ['a URL with init.headers', () => [new URL(URL_), { headers: { authorization: 'Bearer t' } }]],
+            [
+                'a Request with an empty init',
+                () => [new Request(URL_, { headers: { authorization: 'Bearer t' } }), {}],
+            ],
+            [
+                'a URL with init.headers',
+                () => [new URL(URL_), { headers: { authorization: 'Bearer t' } }],
+            ],
         ];
 
         it.each(sources)(
@@ -133,9 +136,7 @@ describe('createFetchWrapper', () => {
                 const { headers } = sentRequest();
                 expect(headers.get(ORG_ID_HEADER)).toBe(org);
                 expect(headers.get(REQUEST_ID_HEADER)).toBe(corr);
-                expect(headers.get('authorization')).toBe(
-                    source === 'no init' ? null : 'Bearer t',
-                );
+                expect(headers.get('authorization')).toBe(source === 'no init' ? null : 'Bearer t');
             },
         );
     });
@@ -148,13 +149,9 @@ describe('createFetchWrapper', () => {
     it.each(callerOrgSources)(
         'leaves a caller’s own org ID header alone when orgId is off, given %s',
         async (_source, args) => {
-            await run(CTX, () =>
-                createFetchWrapper({ orgId: false })(...args()),
-            );
+            await run(CTX, () => createFetchWrapper({ orgId: false })(...args()));
 
-            expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe(
-                'caller-org',
-            );
+            expect(sentRequest().headers.get(ORG_ID_HEADER)).toBe('caller-org');
         },
     );
 });

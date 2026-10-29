@@ -22,9 +22,7 @@ export interface ContextRequest {
     path: string;
 }
 
-export type ResolvedContext =
-    | { orgId: string; requestId: string | undefined }
-    | { error: string };
+export type ResolvedContext = { orgId: string; requestId: string | undefined } | { error: string };
 
 /** The part of the Express and Koa middleware that does not depend on the framework. */
 export function resolveContext(

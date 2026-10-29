@@ -40,11 +40,9 @@ describe('createCron', () => {
         it('creates the node-cron task, named after the job, without starting it', () => {
             const job = create({ name: 'my-job', schedule: '0 * * * *' });
 
-            expect(cronMocks.createTask).toHaveBeenCalledWith(
-                '0 * * * *',
-                expect.any(Function),
-                { name: 'my-job' },
-            );
+            expect(cronMocks.createTask).toHaveBeenCalledWith('0 * * * *', expect.any(Function), {
+                name: 'my-job',
+            });
             expect(cronMocks.task.start).not.toHaveBeenCalled();
             expect(job.isStarted()).toBe(false);
         });
@@ -262,7 +260,10 @@ describe('createCron', () => {
         it('still resolves when the run it waits for fails', async () => {
             let fail = (): void => undefined;
             const run = vi.fn(
-                () => new Promise<void>((_resolve, reject) => (fail = () => reject(new Error('boom')))),
+                () =>
+                    new Promise<void>(
+                        (_resolve, reject) => (fail = () => reject(new Error('boom'))),
+                    ),
             );
             const job = create({ run });
             job.start();

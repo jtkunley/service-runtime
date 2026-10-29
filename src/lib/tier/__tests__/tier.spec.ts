@@ -28,10 +28,7 @@ describe('getTier', () => {
     });
 
     it('ignores a TIER the environment only inherits', () => {
-        const env = Object.create({ TIER: 'dev' }) as Record<
-            string,
-            string | undefined
-        >;
+        const env = Object.create({ TIER: 'dev' }) as Record<string, string | undefined>;
 
         expect(getTier(env)).toBeUndefined();
     });
@@ -120,9 +117,7 @@ describe('isNonProdTier and isProdTier', () => {
 
 describe('tier patterns', () => {
     it('publish the two lists as these exact strings', () => {
-        expect(NON_PROD_TIER_PATTERN).toBe(
-            '^(?:local|dev|test|qa|staging|pr\\d+)$',
-        );
+        expect(NON_PROD_TIER_PATTERN).toBe('^(?:local|dev|test|qa|staging|pr\\d+)$');
         expect(PROD_TIER_PATTERN).toBe('^(?:prod|production)$');
     });
 
