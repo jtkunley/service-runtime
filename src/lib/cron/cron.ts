@@ -70,12 +70,20 @@ export function createCron(options: CronOptions): CronController {
             try {
                 await run();
             } catch (error) {
-                onError?.(error);
                 logger?.error(
                     `Cron "${name}" run failed`,
                     toError(error),
                     { name },
                 );
+                try {
+                    onError?.(error);
+                } catch (hookError) {
+                    logger?.error(
+                        `Cron "${name}" onError hook failed`,
+                        toError(hookError),
+                        { name },
+                    );
+                }
             } finally {
                 if (!allowOverlap) {
                     singleRunInProgress = false;
