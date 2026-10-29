@@ -18,7 +18,6 @@ No runtime dependencies, and it works with any logger.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Design decisions](#design-decisions)
-- [Logger](#logger)
 - [Request context](#request-context)
   - [Declaring the values](#declaring-the-values)
   - [Reading values](#reading-values)
@@ -46,7 +45,7 @@ Requires Node.js 22 or later.
 ```ts
 import express from 'express';
 import { configureService } from '@jtkunley/service-runtime';
-import { rootLogger } from './logger'; // any logger, adapted as shown under Logger
+import { rootLogger } from './logger'; // your logger, see the logger option
 
 const service = configureService({ logger: rootLogger, port: 3000 });
 
@@ -70,42 +69,6 @@ That's a production-ready server: probes on `/readiness` and `/liveness`, gracef
 - **The last log line gets out.** Every exit, clean, forced or fatal, first waits up to a second for a logger that can `flush()`, so the line explaining the exit isn't lost in a buffer.
 - **Only what every service needs.** No runtime dependencies, no framework beyond a thin Express-compatible middleware, and the `exports` map keeps internals private.
 - **Tested the way it runs.** Unit tests hold coverage at 100%, enforced in CI. Component tests build the package as published, install it beside a real Express service, and drive that service as a separate process with real requests, real signals and real exit codes.
-
-## Logger
-
-The package logs through a small interface, so any logger fits with a few lines of adapter:
-
-```ts
-interface RootLogger {
-  child(module: string, action: string): {
-    info(message: string, data: Record<string, unknown>): void;
-    error(message: string, error: Error, data: Record<string, unknown>): void;
-  };
-  flush?(): Promise<void>; // awaited, for at most a second, before the process exits
-}
-```
-
-With [pino](https://getpino.io), for example:
-
-```ts
-import pino from 'pino';
-import type { RootLogger } from '@jtkunley/service-runtime';
-
-const base = pino();
-
-export const rootLogger: RootLogger = {
-  child: (module, action) => {
-    const log = base.child({ module, action });
-    return {
-      info: (message, data) => log.info(data, message),
-      error: (message, error, data) => log.error({ ...data, err: error }, message),
-    };
-  },
-  flush: () => new Promise((resolve) => base.flush(() => resolve())),
-};
-```
-
-Each part of the package logs through its own child: `server` / `context`, `server` / `shutdown` and `server` / `fatal`.
 
 ## Request context
 
@@ -173,7 +136,7 @@ service.context.getStore();       // { tenantId, requestId }, frozen, or undefin
 Adding the values to every log line is the logger's job: have it read `service.context.getStore()` for each line it writes. With pino, that's a mixin:
 
 ```ts
-const base = pino({ mixin: () => service.context.getStore() ?? {} });
+const logger = pino({ mixin: () => service.context.getStore() ?? {} });
 ```
 
 Every line logged inside a request then carries its values. The package's own lines add only what the logger can't know: a rejected request's method, path and missing entries, or a shutdown's signal.
@@ -279,7 +242,7 @@ Returns a `Service`, touching nothing process-wide. Throws a `RangeError` for a 
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `logger` | `RootLogger` | required | What the package's own lines go through. See [Logger](#logger). |
+| `logger` | `RootLogger` | required | What the package's own lines go through: anything with `child(module, action)` returning `info(message, data)` and `error(message, error, data)`, and optionally `flush()`, awaited for up to a second before the process exits. Its children are `server` / `context`, `server` / `shutdown` and `server` / `fatal`. |
 | `port` | `number` | required | The port to listen on; `0` picks a free one. |
 | `host` | `string` | all interfaces | The address to listen on. |
 | `probes` | `{ readiness?, liveness? }` | `/readiness`, `/liveness` | Each a path, or `false` to turn it off. |
