@@ -264,6 +264,16 @@ describe('configureService', () => {
             expect(app).toHaveBeenCalledOnce();
         });
 
+        it('keeps the default path for a probe given as undefined', async () => {
+            const { url, app } = await listen(configure(), undefined, {
+                probes: { readiness: undefined, liveness: undefined },
+            });
+
+            expect((await fetch(`${url}/readiness`)).status).toBe(200);
+            expect((await fetch(`${url}/liveness`)).status).toBe(200);
+            expect(app).not.toHaveBeenCalled();
+        });
+
         it('serves probes on the paths given, and none where turned off', async () => {
             const { url, app } = await listen(configure(), undefined, {
                 probes: { readiness: '/ready', liveness: false },

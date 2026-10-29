@@ -67,7 +67,8 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
     readonly listen: (app: RequestListener, options: ListenOptions) => Promise<AddressInfo>;
 }
 
-const DEFAULT_PROBES = { readiness: '/readiness', liveness: '/liveness' };
+const READINESS_PATH = '/readiness';
+const LIVENESS_PATH = '/liveness';
 
 // The process has one set of signal and fatal handlers, so one server.
 let listening = false;
@@ -98,7 +99,10 @@ export function configureService<
         listening = true;
         registerFatalHandlers(logger);
         const { port, host, probes, forceExitMs, onShutdownStart } = listenOptions;
-        const { readiness, liveness } = { ...DEFAULT_PROBES, ...probes };
+        // An unset path, such as from a missing environment variable, keeps the default;
+        // only `false` turns a probe off.
+        const readiness = probes?.readiness ?? READINESS_PATH;
+        const liveness = probes?.liveness ?? LIVENESS_PATH;
 
         const respond = (res: ServerResponse, status: number) => {
             res.statusCode = status;
