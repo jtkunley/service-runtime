@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import { createTask } from 'node-cron';
 import { toError } from '../shared/errors';
 import type { ChildLogger } from '../shared/logger';
 
@@ -40,12 +40,12 @@ export function createCron(options: CronOptions): CronController {
     let singleRunInProgress = false;
     const pendingRuns = new Set<Promise<void>>();
 
-    const task = cron.schedule(
+    const task = createTask(
         schedule,
         () => {
             void executeTick();
         },
-        { scheduled: false },
+        { name },
     );
 
     async function executeTick(): Promise<void> {
@@ -107,7 +107,7 @@ export function createCron(options: CronOptions): CronController {
                 return;
             }
             stopRequested = false;
-            task.start();
+            void task.start();
             started = true;
             logger?.info(`Cron "${name}" started`, { name, schedule });
         },
@@ -117,14 +117,12 @@ export function createCron(options: CronOptions): CronController {
                 return;
             }
             stopRequested = true;
-            task.stop();
+            await task.stop();
             started = false;
             logger?.info(`Cron "${name}" stopped`, { name });
 
             if (waitForCompletionOnStop && pendingRuns.size > 0) {
-                await Promise.all(
-                    Array.from(pendingRuns).map((p) => p.catch(() => undefined)),
-                );
+                await Promise.allSettled(pendingRuns);
             }
         },
 

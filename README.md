@@ -367,7 +367,7 @@ Exports: `createCron`, `CronOptions`, `CronController`.
 
 #### `createCron(options)`
 
-Returns a `CronController`. Schedules with `node-cron` using `{ scheduled: false }` until you call `start()`.
+Returns a `CronController`. The `node-cron` task is created stopped, named after the job, and only starts scheduling when you call `start()`.
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|

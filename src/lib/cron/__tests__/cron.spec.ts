@@ -4,16 +4,14 @@ import { createCron, type CronOptions } from '../cron';
 const cronMocks = vi.hoisted(() => {
     let tick: (() => void) | undefined;
     const task = { start: vi.fn(), stop: vi.fn() };
-    const schedule = vi.fn(
-        (_schedule: string, callback: () => void, _opts?: unknown) => {
-            tick = callback;
-            return task;
-        },
-    );
-    return { schedule, task, tick: () => tick!() };
+    const createTask = vi.fn((_schedule: string, callback: () => void, _opts?: unknown) => {
+        tick = callback;
+        return task;
+    });
+    return { createTask, task, tick: () => tick!() };
 });
 
-vi.mock('node-cron', () => ({ default: { schedule: cronMocks.schedule } }));
+vi.mock('node-cron', () => ({ createTask: cronMocks.createTask }));
 
 const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
@@ -39,13 +37,13 @@ beforeEach(() => {
 
 describe('createCron', () => {
     describe('scheduling', () => {
-        it('registers the schedule with node-cron without starting it', () => {
-            const job = create({ schedule: '0 * * * *' });
+        it('creates the node-cron task, named after the job, without starting it', () => {
+            const job = create({ name: 'my-job', schedule: '0 * * * *' });
 
-            expect(cronMocks.schedule).toHaveBeenCalledWith(
+            expect(cronMocks.createTask).toHaveBeenCalledWith(
                 '0 * * * *',
                 expect.any(Function),
-                { scheduled: false },
+                { name: 'my-job' },
             );
             expect(cronMocks.task.start).not.toHaveBeenCalled();
             expect(job.isStarted()).toBe(false);
