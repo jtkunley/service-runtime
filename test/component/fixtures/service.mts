@@ -12,12 +12,10 @@ import {
     type CleanupFn,
     type RootLogger,
 } from '@jtkunley/service-runtime';
-import { createCron } from '@jtkunley/service-runtime/cron';
 import { getTier, isNonProdTier, isProdTier } from '@jtkunley/service-runtime/tier';
 
 const env = process.env;
 const defaultTenantId = env['DEFAULT_TENANT_ID'];
-const cronRunMs = env['CRON_RUN_MS'];
 const forceExitMs = env['FORCE_EXIT_MS'];
 
 const context = configureContext({
@@ -106,25 +104,6 @@ app.get('/reject', (_req, res) => {
 });
 
 const cleanups: CleanupFn[] = [];
-if (cronRunMs) {
-    const heartbeat = createCron({
-        name: 'heartbeat',
-        schedule: '* * * * * *',
-        logger: log,
-        context,
-        source: () => ({ headers: { 'x-tenant-id': 'tenant-cron' } }),
-        run: async () => {
-            log.info('Heartbeat started', {});
-            await sleep(Number(cronRunMs));
-            if (env['CRON_FAIL']) throw new Error('heartbeat failed');
-            log.info('Heartbeat finished', {});
-        },
-    });
-    heartbeat.start();
-    cleanups.push(function stopHeartbeat() {
-        return heartbeat.stop();
-    });
-}
 if (env['FAIL_CLEANUP']) {
     cleanups.push(function flushQueue() {
         throw new Error('queue unreachable');

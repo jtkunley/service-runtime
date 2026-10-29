@@ -11,7 +11,7 @@ declare module 'vitest' {
 }
 
 const REPO = resolve(__dirname, '../..');
-const FIXTURE_DEPS = ['express', 'node-cron'];
+const FIXTURE_DEPS = ['express'];
 
 /**
  * Builds the package the way it is published and installs it next to the

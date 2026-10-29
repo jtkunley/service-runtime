@@ -1,7 +1,7 @@
 {
     "name": "@jtkunley/service-runtime",
     "version": "1.0.0",
-    "description": "Request context, graceful shutdown, fatal error handling, deployment tier checks and scheduled jobs for Node.js HTTP services.",
+    "description": "Request context, graceful shutdown, fatal error handling, and deployment tier checks for Node.js HTTP services.",
     "keywords": [
         "asynclocalstorage",
         "request-context",
@@ -11,7 +11,6 @@
         "kubernetes",
         "express",
         "koa",
-        "cron",
         "node"
     ],
     "homepage": "https://github.com/jtkunley/service-runtime#readme",
@@ -49,10 +48,6 @@
             "types": "./src/index.d.ts",
             "default": "./src/index.js"
         },
-        "./cron": {
-            "types": "./src/lib/cron/cron.d.ts",
-            "default": "./src/lib/cron/cron.js"
-        },
         "./tier": {
             "types": "./src/lib/tier/tier.d.ts",
             "default": "./src/lib/tier/tier.js"
@@ -61,9 +56,6 @@
     },
     "typesVersions": {
         "*": {
-            "cron": [
-                "./src/lib/cron/cron.d.ts"
-            ],
             "tier": [
                 "./src/lib/tier/tier.d.ts"
             ]
@@ -75,9 +67,6 @@
         "CHANGELOG.md",
         "LICENSE"
     ],
-    "dependencies": {
-        "node-cron": "^4.6.0"
-    },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@types/express": "^5.0.6",

@@ -17,7 +17,6 @@
         "noEmit": true,
         "paths": {
             "@jtkunley/service-runtime": ["./src/index.ts"],
-            "@jtkunley/service-runtime/cron": ["./src/lib/cron/cron.ts"],
             "@jtkunley/service-runtime/tier": ["./src/lib/tier/tier.ts"]
         }
     },
