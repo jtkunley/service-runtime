@@ -29,11 +29,12 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 
 ## Design decisions
 
-- **One way to wire a service.** The fatal handlers have to be registered before anything can fail, readiness has to read the same state graceful shutdown marks, and probes have to be answered before the context middleware rejects them. `configureService` and `listen` get that right every time, and the parts they're built from aren't exported, so they can't be wired any other way.
+- **One way to wire a service.** Readiness has to read the same state graceful shutdown marks, probes have to be answered before the context middleware rejects them, and the fatal and signal handlers belong to the one server the process runs. `configureService` and `listen` get that right every time, and the parts they're built from aren't exported, so they can't be wired any other way.
 - **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required and which header it travels under. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Each destination the service calls lists the values it receives, so one line shows what a third party gets, and the package makes the headers without caring which HTTP client sends them.
 - **Probes never need context.** Readiness and liveness are answered before the app sees the request, so a probe without a tenant header can't be rejected and leave a pod never ready.
 - **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short, and liveness keeps passing, so the orchestrator doesn't kill a process that is draining.
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the process logs it and exits `1` without attempting a graceful shutdown, and leaves the restart to the orchestrator.
+- **Importing the service is safe in tests.** `configureService` touches nothing process-wide; the fatal and signal handlers are registered by `listen`, which tests don't call, so a stray rejection in a test is reported by the test runner instead of exiting it.
 - **The last log line gets out.** Every exit, clean, forced or fatal, first waits for a logger that can `flush()`, for at most a second, so the line explaining the exit isn't lost in a buffer.
 - **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
 - **Only what every service needs, and nothing it doesn't.** No runtime dependencies, no framework beyond a thin Express adapter, and the `exports` map keeps internals private. Scheduled jobs, which not every service has, live in [`@jtkunley/cron`](https://github.com/jtkunley/cron).
@@ -57,7 +58,6 @@ import { randomUUID } from 'node:crypto';
 import { configureService } from '@jtkunley/service-runtime';
 import { rootLogger } from './logger'; // your RootLogger implementation
 
-// First, before the app is built: it registers the fatal error handlers.
 export const service = configureService({
   logger: rootLogger,
   context: {
@@ -243,7 +243,7 @@ Before any exit, a logger with `flush()` gets up to a second to write out what i
 
 ### Fatal errors
 
-From the moment `configureService` returns, an `uncaughtException` or `unhandledRejection` is logged through the child logger `server` / `fatal`, and the process exits with code 1 once the logger has flushed. The process is in an unknown state after either, so it skips graceful shutdown and leaves the restart to the orchestrator. Anything thrown that isn't an `Error` is wrapped in one and kept as its `cause`.
+From the moment `listen` is called, an `uncaughtException` or `unhandledRejection` is logged through the child logger `server` / `fatal`, and the process exits with code 1 once the logger has flushed. The process is in an unknown state after either, so it skips graceful shutdown and leaves the restart to the orchestrator. Anything thrown that isn't an `Error` is wrapped in one and kept as its `cause`. A failure before `listen`, while the service is starting, takes Node's default: the stack trace on stderr and exit code 1.
 
 ## Deployment tier
 
@@ -271,7 +271,7 @@ The tier checks are also exported from the root. `@jtkunley/service-runtime/tier
 
 ### `configureService({ logger, context, destinations? })`
 
-Registers the fatal error handlers and returns a `Service`. Call it once per process, first at startup; a second call throws an `Error`.
+Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context.
 
 | `Service` member | Description |
 |------------------|-------------|
@@ -282,7 +282,7 @@ Registers the fatal error handlers and returns a `Service`. Call it once per pro
 | `context.getHeaders(destination)` | The headers for a call to a declared destination; `{}` outside a request. Throws for an undeclared one. |
 | `onShutdown(cleanup)` | Adds a `CleanupFn`, `() => void \| Promise<void>`, to run on shutdown. |
 | `isShuttingDown()` | Whether shutdown has started. |
-| `listen(app, options)` | Starts the server; resolves with its `AddressInfo`. Call it once; a second call rejects. |
+| `listen(app, options)` | Registers the fatal error handlers and starts the server; resolves with its `AddressInfo`. One service per process listens; a second call rejects. |
 
 | `listen` option | Type | Default | Description |
 |-----------------|------|---------|-------------|

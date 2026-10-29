@@ -75,31 +75,12 @@ describe('configureService', () => {
     });
 
     describe('configuring', () => {
-        it('registers the fatal handlers at once, before the app is built', () => {
-            const logger = createMockRootLogger();
-
-            configure(logger);
-
-            expect(mocks.registerFatalHandlers).toHaveBeenCalledWith(logger);
-            expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
-        });
-
-        it('throws on a second call, registering nothing more', () => {
+        it('touches nothing process-wide until listen', () => {
+            configure();
             configure();
 
-            expect(() => configure()).toThrow(
-                'configureService can only be called once per process',
-            );
-            expect(mocks.registerFatalHandlers).toHaveBeenCalledOnce();
-        });
-
-        it('stays unconfigured when the fatal handlers cannot register, so a retry still works', () => {
-            mocks.registerFatalHandlers.mockImplementationOnce(() => {
-                throw new Error('no child');
-            });
-
-            expect(() => configure()).toThrow('no child');
-            expect(() => configure()).not.toThrow();
+            expect(mocks.registerFatalHandlers).not.toHaveBeenCalled();
+            expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
         });
 
         it('types the context values from the entries', () => {
@@ -191,7 +172,7 @@ describe('configureService', () => {
     });
 
     describe('listen', () => {
-        it('starts the server and hands it, with the cleanups and the shutdown state, to graceful shutdown', async () => {
+        it('registers the fatal handlers, then starts the server and hands it, with the cleanups and the shutdown state, to graceful shutdown', async () => {
             const logger = createMockRootLogger();
             const service = configure(logger);
             const first = vi.fn();
@@ -205,6 +186,10 @@ describe('configureService', () => {
             const later = vi.fn();
             service.onShutdown(later);
 
+            expect(mocks.registerFatalHandlers).toHaveBeenCalledWith(logger);
+            expect(mocks.registerFatalHandlers.mock.invocationCallOrder[0]).toBeLessThan(
+                mocks.setupGracefulShutdown.mock.invocationCallOrder[0]!,
+            );
             const [server, shutdownLogger, cleanups, options] = shutdownCall();
             expect(server.listening).toBe(true);
             expect(shutdownLogger).toBe(logger);
@@ -222,13 +207,16 @@ describe('configureService', () => {
             expect(address).toEqual(shutdownCall()[0].address());
         });
 
-        it('throws on a second call', async () => {
+        it('lets only one service in the process listen', async () => {
             const service = configure();
             await listen(service);
 
-            await expect(service.listen(vi.fn(), { port: 0 })).rejects.toThrow(
-                'listen() can only be called once',
-            );
+            for (const second of [service, configure()]) {
+                await expect(second.listen(vi.fn(), { port: 0 })).rejects.toThrow(
+                    'Only one service can listen per process',
+                );
+            }
+            expect(mocks.registerFatalHandlers).toHaveBeenCalledOnce();
         });
 
         it('rejects when the port is taken', async () => {

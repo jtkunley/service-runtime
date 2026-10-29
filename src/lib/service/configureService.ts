@@ -60,30 +60,27 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
     readonly isShuttingDown: () => boolean;
     /** Cleanups run in the order registered, after the server has closed. */
     readonly onShutdown: (cleanup: CleanupFn) => void;
-    /** Starts the server, with graceful shutdown. Resolves with the bound address. */
+    /**
+     * Registers the fatal error handlers, then starts the server with graceful
+     * shutdown. Resolves with the bound address. One service per process listens.
+     */
     readonly listen: (app: RequestListener, options: ListenOptions) => Promise<AddressInfo>;
 }
 
 const DEFAULT_PROBES = { readiness: '/readiness', liveness: '/liveness' };
 
-let configured = false;
+// The process has one set of signal and fatal handlers, so one server.
+let listening = false;
 
 /**
- * Call it first at startup, before building the app: it registers the fatal
- * error handlers, so a failure while starting is caught too.
- *
- * @throws Error on a second call; the process has one set of handlers and one server.
+ * Touches nothing process-wide until `listen`, so app code that imports the
+ * service can be tested without it exiting the test process.
  */
 export function configureService<
     const C extends ContextConfig,
     const D extends Destinations = Record<never, never>,
 >(options: ServiceOptions<C, D>): Service<C, D> {
-    if (configured) {
-        throw new Error('configureService can only be called once per process');
-    }
     const { logger } = options;
-    registerFatalHandlers(logger);
-    configured = true;
 
     const context = configureContext<C>(options.context);
     const getHeaders = createGetHeaders(
@@ -93,13 +90,13 @@ export function configureService<
     );
     const state = createShutdownState();
     const cleanups: CleanupFn[] = [];
-    let listening = false;
 
     const listen = async (app: RequestListener, listenOptions: ListenOptions) => {
         if (listening) {
-            throw new Error('listen() can only be called once');
+            throw new Error('Only one service can listen per process');
         }
         listening = true;
+        registerFatalHandlers(logger);
         const { port, host, probes, forceExitMs, onShutdownStart } = listenOptions;
         const { readiness, liveness } = { ...DEFAULT_PROBES, ...probes };
 
