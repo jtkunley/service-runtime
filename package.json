@@ -35,7 +35,7 @@
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
-        "prepublishOnly": "node -e \"console.error('Publish the built package: npm run build && npm publish dist'); process.exit(1)\""
+        "prepublishOnly": "node -e \"console.error('Publish the built package: npm run build && npm publish ./dist'); process.exit(1)\""
     },
     "engines": {
         "node": ">=22"

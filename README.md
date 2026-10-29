@@ -331,7 +331,7 @@ The component tests build the package as it is published, install it beside a sm
 `npm run build` compiles into `dist/src/` and copies `package.json`, this README, the changelog and the license into `dist/`, which is the directory to publish:
 
 ```bash
-npm run build && npm publish dist
+npm run build && npm publish ./dist
 ```
 
 Publishing from the repository root is refused, since it would ship the TypeScript sources.
