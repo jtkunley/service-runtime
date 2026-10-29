@@ -215,7 +215,7 @@ Both answer `GET` and `HEAD` before the app sees the request, so they never need
 
 ### Graceful shutdown
 
-On the first SIGTERM or SIGINT, the service:
+On the first shutdown signal, SIGTERM or SIGINT unless `shutdownSignals` names others, the service:
 
 1. Starts failing readiness
 2. Runs `onShutdownStart`, if given, and waits for it (e.g. for the load balancer to stop routing to the pod)
@@ -235,7 +235,7 @@ From the moment `listen` is called, an `uncaughtException` or `unhandledRejectio
 
 ### `configureService(options)`
 
-Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context. Throws a `RangeError` for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive integer.
+Returns a `Service`, touching nothing process-wide. Export it from one module, so the whole app shares its context. Throws a `RangeError` for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive integer, and for `shutdownSignals` that are empty or include one the process can't catch, such as `SIGKILL`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -248,7 +248,33 @@ Returns a `Service`, touching nothing process-wide. Export it from one module, s
 | `cleanups` | `CleanupFn[]` | none | Run in order on shutdown, once the server has closed. |
 | `onShutdownStart` | `() => void \| Promise<void>` | none | Runs once, with readiness already failing and before the server closes, which waits for a returned promise. |
 | `keepAliveTimeoutMs` | `number` | `65000` | How long an idle keep-alive connection stays open. Keep it above the load balancer's idle timeout (60 seconds for AWS ALB and nginx), or it may send a request on a connection Node is closing and answer 502. The headers timeout is set a second above it. A positive integer. |
+| `shutdownSignals` | `NodeJS.Signals[]` | `['SIGTERM', 'SIGINT']` | The signals that start graceful shutdown: SIGTERM is what orchestrators send, SIGINT is Ctrl+C. |
 | `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1, after up to a second for the logger to flush. A positive integer. |
+
+Every option set, each to something other than its default:
+
+```ts
+const service = configureService({
+  logger: rootLogger,
+  port: 8080,
+  host: '0.0.0.0',
+  probes: { readiness: '/ready', liveness: false },
+  context: {
+    tenantId: { value: (req) => req.headers['x-tenant-id'], required: true, header: 'x-tenant-id' },
+    requestId: { value: (req) => req.headers['x-request-id']?.trim() || randomUUID(), header: 'x-request-id' },
+    locale: { value: (req) => req.headers['accept-language'] }, // never leaves the service
+  },
+  destinations: {
+    platform: ['tenantId', 'requestId'],
+    payments: ['requestId'],
+  },
+  cleanups: [() => queueConsumer.close(), () => db.end()],
+  onShutdownStart: () => new Promise((resolve) => setTimeout(resolve, 10_000)),
+  keepAliveTimeoutMs: 75_000,
+  shutdownSignals: ['SIGTERM'],
+  forceExitMs: 45_000,
+});
+```
 
 | `Service` member | Description |
 |------------------|-------------|

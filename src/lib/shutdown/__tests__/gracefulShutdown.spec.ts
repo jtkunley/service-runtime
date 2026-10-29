@@ -34,7 +34,11 @@ function setup(
     cleanups: CleanupFn[] = [],
     options: Partial<GracefulShutdownOptions> = {},
 ): void {
-    setupGracefulShutdown(server, root, cleanups, { state: createShutdownState(), ...options });
+    setupGracefulShutdown(server, root, cleanups, {
+        state: createShutdownState(),
+        signals: ['SIGTERM', 'SIGINT'],
+        ...options,
+    });
 }
 
 describe('setupGracefulShutdown', () => {
@@ -67,7 +71,7 @@ describe('setupGracefulShutdown', () => {
     });
 
     describe('registration', () => {
-        it('listens to SIGTERM and SIGINT, never SIGQUIT, logging through the server/shutdown child', () => {
+        it('listens to the signals given and no others, logging through the server/shutdown child', () => {
             const root = createMockRootLogger();
 
             setup(createMockServer(), root);
@@ -76,6 +80,18 @@ describe('setupGracefulShutdown', () => {
             expect(added('SIGTERM')).toHaveLength(1);
             expect(added('SIGINT')).toHaveLength(1);
             expect(added('SIGQUIT')).toHaveLength(0);
+        });
+
+        it('shuts down on another signal given, listening once to one given twice', async () => {
+            const server = createMockServer();
+            setup(server, createMockRootLogger(), [], { signals: ['SIGQUIT', 'SIGQUIT'] });
+
+            expect(added('SIGQUIT')).toHaveLength(1);
+            expect(added('SIGTERM')).toHaveLength(0);
+            process.emit('SIGQUIT', 'SIGQUIT');
+
+            expect(await exited).toBe(0);
+            expect(server.close).toHaveBeenCalledOnce();
         });
     });
 

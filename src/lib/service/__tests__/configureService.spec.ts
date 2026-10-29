@@ -225,7 +225,11 @@ describe('configureService', () => {
             expect(server.listening).toBe(true);
             expect(shutdownLogger).toBe(logger);
             expect(handedOver).toEqual(cleanups);
-            expect(options).toMatchObject({ forceExitMs: 5_000, onShutdownStart });
+            expect(options).toMatchObject({
+                forceExitMs: 5_000,
+                onShutdownStart,
+                signals: ['SIGTERM', 'SIGINT'],
+            });
             expect(await (await fetch(`${url}/orders`)).text()).toBe('app');
         });
 
@@ -277,6 +281,23 @@ describe('configureService', () => {
             expect(() => configure({ [name]: value })).toThrow(
                 new RangeError(`${name} must be a positive integer`),
             );
+        });
+
+        it('hands graceful shutdown the signals given', async () => {
+            await listen(configure({ shutdownSignals: ['SIGTERM'] }));
+
+            expect(shutdownCall()[3].signals).toEqual(['SIGTERM']);
+        });
+
+        it.each([
+            [[], 'shutdownSignals must include at least one signal'],
+            [['SIGKILL'], 'SIGKILL is not a signal the process can catch'],
+            [['SIGTERM', 'SIGSTOP'], 'SIGSTOP is not a signal the process can catch'],
+            [['SIGTREM'], 'SIGTREM is not a signal the process can catch'],
+        ])('refuses shutdownSignals %j when configured', (shutdownSignals, message) => {
+            expect(() =>
+                configure({ shutdownSignals: shutdownSignals as NodeJS.Signals[] }),
+            ).toThrow(new RangeError(message));
         });
 
         it('rejects when the port is taken', async () => {

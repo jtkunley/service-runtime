@@ -5,7 +5,6 @@ import { exitAfterFlush } from '../shared/exitAfterFlush';
 import type { ShutdownState } from './shutdownState';
 
 const FORCE_EXIT_MS = 30_000;
-const SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
 /**
  * `server.close()` closes only connections idle at that moment, so a keep-alive
  * connection that finishes its response later would otherwise stay open until
@@ -29,6 +28,7 @@ export interface GracefulShutdownOptions {
     onShutdownStart?: () => void | Promise<void>;
     /** Begun on the first signal, which fails readiness. */
     state: ShutdownState;
+    signals: readonly NodeJS.Signals[];
 }
 
 /**
@@ -39,7 +39,7 @@ export function setupGracefulShutdown(
     server: Server,
     rootLogger: RootLogger,
     cleanupFns: readonly CleanupFn[],
-    { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state }: GracefulShutdownOptions,
+    { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state, signals }: GracefulShutdownOptions,
 ): void {
     const logger = rootLogger.child('server', 'shutdown');
 
@@ -111,7 +111,7 @@ export function setupGracefulShutdown(
             });
     };
 
-    for (const signal of SHUTDOWN_SIGNALS) {
+    for (const signal of new Set(signals)) {
         process.on(signal, onSignal);
     }
 }

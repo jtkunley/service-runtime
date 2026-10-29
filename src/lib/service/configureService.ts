@@ -5,6 +5,7 @@ import {
     type ServerResponse,
 } from 'http';
 import type { AddressInfo } from 'net';
+import { constants } from 'os';
 import {
     configureContext,
     type Context,
@@ -52,6 +53,11 @@ export interface ServiceOptions<C extends ContextConfig, D extends Destinations>
      */
     keepAliveTimeoutMs?: number;
     /**
+     * The signals that start graceful shutdown. Default SIGTERM, which
+     * orchestrators send, and SIGINT, which Ctrl+C sends.
+     */
+    shutdownSignals?: readonly NodeJS.Signals[];
+    /**
      * From the first signal to the exit; past it the process exits 1, after up
      * to a second for the logger to flush. Default 30000.
      */
@@ -80,6 +86,8 @@ export interface Service<C extends ContextConfig, D extends Destinations> {
 }
 
 const KEEP_ALIVE_TIMEOUT_MS = 65_000;
+const SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
+const UNCATCHABLE_SIGNALS: readonly string[] = ['SIGKILL', 'SIGSTOP'];
 const READINESS_PATH = '/readiness';
 const LIVENESS_PATH = '/liveness';
 
@@ -90,7 +98,8 @@ let listening = false;
  * Touches nothing process-wide until `listen`, so app code that imports the
  * service can be tested without it exiting the test process.
  *
- * @throws RangeError for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive integer.
+ * @throws RangeError for a `keepAliveTimeoutMs` or `forceExitMs` that isn't a positive
+ * integer, or `shutdownSignals` that are empty or include one the process can't catch.
  */
 export function configureService<
     const C extends ContextConfig = Record<never, never>,
@@ -102,12 +111,21 @@ export function configureService<
         host,
         probes,
         keepAliveTimeoutMs = KEEP_ALIVE_TIMEOUT_MS,
+        shutdownSignals = SHUTDOWN_SIGNALS,
         forceExitMs,
         onShutdownStart,
     } = options;
     for (const [name, value] of Object.entries({ keepAliveTimeoutMs, forceExitMs })) {
         if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
             throw new RangeError(`${name} must be a positive integer`);
+        }
+    }
+    if (shutdownSignals.length === 0) {
+        throw new RangeError('shutdownSignals must include at least one signal');
+    }
+    for (const signal of shutdownSignals) {
+        if (!(signal in constants.signals) || UNCATCHABLE_SIGNALS.includes(signal)) {
+            throw new RangeError(`${signal} is not a signal the process can catch`);
         }
     }
     const config = options.context ?? ({} as C & NoUnknownAttributes<C>);
@@ -151,7 +169,12 @@ export function configureService<
         server.headersTimeout = keepAliveTimeoutMs + 1_000;
         server.requestTimeout = Math.max(server.requestTimeout, server.headersTimeout);
 
-        setupGracefulShutdown(server, logger, cleanups, { state, forceExitMs, onShutdownStart });
+        setupGracefulShutdown(server, logger, cleanups, {
+            state,
+            signals: shutdownSignals,
+            forceExitMs,
+            onShutdownStart,
+        });
         await new Promise<void>((resolve, reject) => {
             server.once('error', reject);
             server.listen(port, host, () => {
