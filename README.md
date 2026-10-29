@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully: **request context** that carries the values each request needs, such as its tenant and request ID, through `AsyncLocalStorage`, **graceful shutdown** that really drains, **fatal error handling**, **deployment tier** checks, and **scheduled jobs** that stop cleanly.
+The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully: **request context** that carries the values each request needs, such as its tenant and request ID, through `AsyncLocalStorage`, **graceful shutdown** that really drains, **fatal error handling**, and **deployment tier** checks. It has no runtime dependencies.
 
 ## Contents
 
@@ -15,7 +15,6 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
   - [Configuring the context](#configuring-the-context)
   - [Reading values](#reading-values)
   - [Express middleware](#express-middleware)
-  - [Koa middleware](#koa-middleware)
   - [Background jobs and message consumers](#background-jobs-and-message-consumers)
   - [Outgoing fetch](#outgoing-fetch)
   - [API](#request-context-api)
@@ -25,12 +24,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
   - [Usage](#usage)
   - [Fatal errors](#fatal-errors)
   - [API](#graceful-shutdown-api)
-- [Scheduled jobs (`createCron`)](#scheduled-jobs-createcron)
-  - [Basic usage](#basic-usage)
-  - [Logger, overlap, and error hook](#logger-overlap-and-error-hook)
-  - [Running in the request context](#running-in-the-request-context)
-  - [Stopping with graceful shutdown](#stopping-with-graceful-shutdown)
-  - [API](#scheduled-jobs-api)
+- [Related packages](#related-packages)
 - [Development](#development)
 - [License](#license)
 
@@ -41,7 +35,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the fatal handlers log and exit `1` without attempting a graceful shutdown, and leave the restart to the orchestrator.
 - **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
 - **One registration per process.** Calling `setupGracefulShutdown` or `registerFatalHandlers` twice throws, instead of silently ignoring a second server or logging every failure twice.
-- **You only load what you use.** `node-cron`, the only runtime dependency, sits behind the `/cron` subpath, and the `exports` map keeps internals private.
+- **Only what every service needs, and nothing it doesn't.** No runtime dependencies, no framework beyond a thin Express adapter, and the `exports` map keeps internals private. Scheduled jobs, which not every service has, live in [`@jtkunley/cron`](https://github.com/jtkunley/cron).
 - **Tested the way it runs.** Unit tests hold coverage at 100%, enforced in CI. Component tests build the package as published, install it beside a real Express service, and drive that service as a separate process with real requests, real signals and real exit codes.
 
 ## Install
@@ -68,7 +62,6 @@ import {
   registerFatalHandlers,
   setupGracefulShutdown,
 } from '@jtkunley/service-runtime';
-import { createCron } from '@jtkunley/service-runtime/cron';
 import { rootLogger } from './logger'; // your RootLogger implementation
 
 registerFatalHandlers(rootLogger); // first, so a failure while starting is caught
@@ -97,11 +90,8 @@ app.get('/orders', async (_req, res) => {
   res.json(await orders.json());
 });
 
-const purge = createCron({ name: 'purge', schedule: '0 * * * *', run: purgeExpired });
-purge.start();
-
 const server = createServer(app).listen(3000);
-setupGracefulShutdown(server, rootLogger, [() => purge.stop(), closeDb], { state });
+setupGracefulShutdown(server, rootLogger, [closeDb], { state });
 ```
 
 ## Request context
@@ -162,7 +152,7 @@ logger.configureContext({
 });
 ```
 
-The package's own log lines therefore carry only what the logger can't know: a rejected request's method, path and missing entries, a cron job's name, a shutdown's signal.
+The package's own log lines therefore carry only what the logger can't know: a rejected request's method, path and missing entries, or a shutdown's signal.
 
 ### Express middleware
 
@@ -177,18 +167,6 @@ app.use(createExpressMiddleware(context, { logger: rootLogger.child('http', 'req
 ```
 
 Works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`. With a `logger`, the rejection is logged as an `error` with the method, full path and the names of the missing entries. The request never entered a context, so this is everything the logger has to go on.
-
-### Koa middleware
-
-```ts
-import Koa from 'koa';
-import { createKoaMiddleware } from '@jtkunley/service-runtime';
-
-const app = new Koa();
-app.use(createKoaMiddleware(context, { logger }));
-```
-
-Same behaviour as the Express variant.
 
 ### Background jobs and message consumers
 
@@ -225,7 +203,7 @@ Takes an object of named `ContextEntry` values and returns a `Context`. Each cal
 | `get(name)` | The value of one entry. Throws `Error('No request context')` outside a request. |
 | `getStore()` | Every value, frozen, or `undefined` outside a request. |
 
-#### `createExpressMiddleware(context, opts?)` and `createKoaMiddleware(context, opts?)`
+#### `createExpressMiddleware(context, opts?)`
 
 `opts` is `ContextMiddlewareOptions`, `{ logger?: ChildLogger }`; only `logger.error` is used.
 
@@ -244,12 +222,11 @@ Returns a `fetch`-compatible function. `options.destination` is `'internal'` (th
 | Import | Exports |
 |--------|---------|
 | `@jtkunley/service-runtime` | Request context, graceful shutdown, fatal error handlers, the deployment tier, the logger types |
-| `@jtkunley/service-runtime/cron` | `createCron`, `CronOptions`, `CronController` |
 | `@jtkunley/service-runtime/tier` | `getTier`, `isNonProdTier`, `isProdTier`, `NON_PROD_TIER_PATTERN`, `PROD_TIER_PATTERN`, `TierEnv` |
 
-`node-cron` is the package's only runtime dependency, so `createCron` lives on its own subpath: a service that doesn't schedule jobs never loads it. `@jtkunley/service-runtime/tier` loads nothing but the tier check, for code that wants only that.
+`@jtkunley/service-runtime/tier` loads nothing but the tier check, for code that wants only that.
 
-The root, these subpaths and `@jtkunley/service-runtime/package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
+The root, the tier subpath and `@jtkunley/service-runtime/package.json` are the whole public surface: the `exports` map rejects deep imports into `src/`.
 
 ## Deployment tier
 
@@ -287,7 +264,7 @@ The whole shutdown never takes longer than `forceExitMs` (30 seconds by default)
 
 ### Usage
 
-Create the shutdown state when the app is built, so readiness can read it, then register shutdown once the server listens. Works the same with Express, Koa, or any framework on a Node `http.Server`.
+Create the shutdown state when the app is built, so readiness can read it, then register shutdown once the server listens. Works the same with Express or any framework on a Node `http.Server`.
 
 ```ts
 import { createServer } from 'http';
@@ -353,117 +330,10 @@ Registers the `uncaughtException` and `unhandledRejection` handlers. Logs use th
 type CleanupFn = () => void | Promise<void>;
 ```
 
----
+## Related packages
 
-## Scheduled jobs (`createCron`)
-
-`createCron` wraps [`node-cron`](https://www.npmjs.com/package/node-cron): you provide a cron expression, an async `run()` body, optional logging, and whether overlapping ticks are allowed. Call `start()` when the process should begin scheduling; call `await stop()` before exit (for example from a `setupGracefulShutdown` cleanup) so the scheduler stops and, by default, in-flight work can finish.
-
-Errors inside `run()` are handled per tick: they are logged when you pass `logger`, and forwarded to `onError` when you set it. The schedule keeps running; a failed tick does not tear down the cron task.
-
-### Basic usage
-
-```ts
-import { createCron } from '@jtkunley/service-runtime/cron';
-
-const job = createCron({
-  name: 'nightly-sync',
-  schedule: '0 2 * * *', // 02:00 daily (standard 5-field node-cron expression)
-  run: async () => {
-    await syncSomething();
-  },
-});
-
-job.start();
-
-// On shutdown:
-// await job.stop();
-```
-
-### Logger, overlap, and error hook
-
-```ts
-const job = createCron({
-  name: 'poll-queue',
-  schedule: '*/5 * * * *', // every 5 minutes
-  run: async () => {
-    await drainQueue();
-  },
-  logger: childLogger, // any ChildLogger
-  allowOverlap: false, // default: skip a tick if the previous run is still in progress
-  onError: (err) => {
-    Sentry.captureException(err); // optional; failures still go to logger?.error when provided
-  },
-  waitForCompletionOnStop: true, // default: stop() awaits in-flight run() calls
-});
-```
-
-### Running in the request context
-
-Pass the `context` and each tick runs inside it, its values worked out from `source`, just as a request's are worked out from its headers. The job can read them and call downstream services through the fetch wrapper. A failed run is logged from inside the tick's context, so a logger that injects the values, as above, adds the tick's request ID to the failure line.
-
-```ts
-const job = createCron({
-  name: 'reconcile',
-  schedule: '*/5 * * * *',
-  context,
-  source: () => ({ headers: { 'x-tenant-id': process.env.TENANT_ID } }),
-  run: reconcile, // context.get('tenantId') and context.get('requestId') work in here
-  logger: childLogger,
-});
-```
-
-A tick missing a required value never calls `run()`; it is logged and reported to `onError` like a failed run, and later ticks still run. A job that works through every tenant in turn should leave `context` out and open one context per tenant itself:
-
-```ts
-run: async () => {
-  for (const tenantId of await listTenants()) {
-    await context.run({ headers: { 'x-tenant-id': tenantId } }, () => syncTenant());
-  }
-},
-```
-
-### Stopping with graceful shutdown
-
-Add `job.stop()` as a cleanup so the scheduler stops when the process receives SIGTERM:
-
-```ts
-const job = createCron({ name: 'x', schedule: '*/5 * * * *', run: doWork });
-job.start();
-
-setupGracefulShutdown(server, rootLogger, [() => job.stop()]);
-```
-
-### Scheduled jobs API
-
-Exports: `createCron`, `CronOptions`, `CronController`.
-
-#### `createCron(options)`
-
-Returns a `CronController`. The `node-cron` task is created stopped, named after the job, and only starts scheduling when you call `start()`.
-
-| Option | Type | Required | Default | Description |
-|--------|------|----------|---------|-------------|
-| `name` | `string` | Yes | — | Used in log messages. |
-| `schedule` | `string` | Yes | — | Cron expression accepted by `node-cron`. |
-| `run` | `() => Promise<void>` | Yes | — | Async work for each tick. |
-| `logger` | `ChildLogger` | No | — | Optional logger for lifecycle and error messages. |
-| `onError` | `(error: unknown) => void` | No | — | Optional hook when `run()` throws or rejects (e.g. error reporting, metrics). |
-| `allowOverlap` | `boolean` | No | `false` | If `false`, a tick is skipped while the prior `run()` is still running (`warn` logged). |
-| `waitForCompletionOnStop` | `boolean` | No | `true` | If `true`, `stop()` awaits pending `run()` invocations. |
-| `context` | `Context` | No | — | Runs each tick inside this context, failure log included. |
-| `source` | `() => ContextSource` | No | no headers | Where each tick's values come from, `{ headers }`, as for `context.run()`. |
-
-#### `CronController`
-
-| Method | Description |
-|--------|-------------|
-| `start()` | Starts the underlying `node-cron` task. Idempotent. |
-| `stop()` | Stops scheduling; by default waits for in-flight runs (see `waitForCompletionOnStop`). |
-| `isStarted()` | Whether `start()` has been called without a subsequent `stop()`. |
-| `isActive()` | Whether at least one `run()` is currently in progress. |
-
----
+- [`@jtkunley/logger`](https://github.com/jtkunley/logger): structured JSON logging on pino, whose child loggers fit the `RootLogger` interface, and whose context injection adds the request's values to every line.
+- [`@jtkunley/cron`](https://github.com/jtkunley/cron): scheduled jobs that skip overlapping runs and stop cleanly. Its `runInContext` option runs each tick in a request context, `(tick) => context.run({ headers: { 'x-tenant-id': tenantId } }, tick)`, and its `stop()` belongs in the shutdown cleanups.
 
 ## Development
 
@@ -483,10 +353,9 @@ npm run build           # compile the publishable package into dist/
 src/
   index.ts                 the root entry point
   lib/context/             configureContext, the request context itself
-  lib/middleware/          Express and Koa middleware that fill the context
+  lib/middleware/          Express middleware that fills the context
   lib/fetch/               fetch wrapper that forwards context values downstream
   lib/lifecycle/           graceful shutdown, shutdown state, fatal error handlers
-  lib/cron/                createCron, the /cron entry point
   lib/tier/                deployment tier checks, the /tier entry point
   lib/shared/              logger types and error helpers
   **/__tests__/            unit tests, one spec per source file
