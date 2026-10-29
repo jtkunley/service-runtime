@@ -1,7 +1,6 @@
 # @jtkunley/service-runtime
 
 [![CI](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@jtkunley/service-runtime)](https://www.npmjs.com/package/@jtkunley/service-runtime)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
