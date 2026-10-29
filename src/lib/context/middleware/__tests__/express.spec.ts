@@ -7,6 +7,7 @@ import { MISSING_ORG_ERROR, MISSING_REQUEST_ID_WARN } from '../resolveContext';
 const makeReq = (headers: Record<string, string> = {}) => ({
     headers: { 'user-agent': 'agent/1', ...headers },
     url: '/orders',
+    originalUrl: '/api/orders',
     method: 'POST',
 });
 const makeRes = () => ({
@@ -65,7 +66,7 @@ describe('createExpressMiddleware', () => {
         expect(next).toHaveBeenCalledOnce();
         expect(logger.warn).toHaveBeenCalledWith(MISSING_REQUEST_ID_WARN, {
             method: 'POST',
-            path: '/orders',
+            path: '/api/orders',
             orgId: 'org-1',
             requestId: undefined,
             userAgent: 'agent/1',
@@ -91,7 +92,7 @@ describe('createExpressMiddleware', () => {
             new Error(MISSING_ORG_ERROR),
             {
                 method: 'POST',
-                path: '/orders',
+                path: '/api/orders',
                 orgId: undefined,
                 requestId: 'corr-1',
                 userAgent: 'agent/1',
@@ -126,6 +127,18 @@ describe('createExpressMiddleware', () => {
 
         expect(next).toHaveBeenCalledOnce();
         expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('logs the full path, not the one relative to the router it is mounted on', () => {
+        const logger = makeLogger();
+
+        createExpressMiddleware({ logger })(makeReq(), makeRes(), vi.fn());
+
+        expect(logger.error).toHaveBeenCalledWith(
+            MISSING_ORG_ERROR,
+            expect.any(Error),
+            expect.objectContaining({ path: '/api/orders' }),
+        );
     });
 
     it('rejects without a logger', () => {

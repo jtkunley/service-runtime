@@ -11,7 +11,7 @@ export type { MiddlewareOptions as ExpressMiddlewareOptions };
 interface Req {
     headers: IncomingHttpHeaders;
     method: string;
-    url: string;
+    originalUrl: string;
 }
 interface Res {
     status(code: number): { json(body: unknown): void };
@@ -20,7 +20,7 @@ interface Res {
 export function createExpressMiddleware(opts: MiddlewareOptions = {}) {
     const { logger } = opts;
     return (req: Req, res: Res, next: () => void): void => {
-        const { method, url: path, headers } = req;
+        const { method, originalUrl: path, headers } = req;
         const result = resolveRequestContext(headers, opts);
         const { type, orgId, requestId } = result;
         const logData = {
