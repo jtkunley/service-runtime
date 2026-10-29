@@ -1,10 +1,17 @@
 # @jtkunley/service-runtime
 
-Utilities for Node.js HTTP servers: **request context** via `AsyncLocalStorage`, the **deployment tier**, **graceful shutdown**, and **`createCron`** for scheduled work.
+[![CI](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@jtkunley/service-runtime)](https://www.npmjs.com/package/@jtkunley/service-runtime)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+The runtime plumbing every Node.js HTTP service ends up writing, done once and done carefully: **request context** that carries the tenant and request ID through `AsyncLocalStorage`, **graceful shutdown** that really drains, **fatal error handling**, **deployment tier** checks, and **scheduled jobs** that stop cleanly.
 
 ## Contents
 
+- [Design decisions](#design-decisions)
 - [Install](#install)
+- [Quick start](#quick-start)
 - [Request context](#request-context)
   - [Basic usage](#basic-usage)
   - [Express middleware](#express-middleware)
@@ -23,28 +30,65 @@ Utilities for Node.js HTTP servers: **request context** via `AsyncLocalStorage`,
   - [Logger, overlap, and error hook](#logger-overlap-and-error-hook)
   - [Stopping with graceful shutdown](#stopping-with-graceful-shutdown)
   - [API](#scheduled-jobs-api)
+- [Development](#development)
+- [License](#license)
 
-The `main` and `types` fields in package.json point to built output (`./src/index.js` and `./src/index.d.ts`). `npm run build` compiles them into `dist/src/` and copies `package.json`, this README and the changelog into `dist/`, which is the directory to publish (`npm publish dist`).
+## Design decisions
 
-## Development
-
-Requires Node.js 22 or later.
-
-```bash
-npm install
-npm run check           # typecheck, lint and test
-npm run test:unit       # unit tests, next to the source in src/
-npm run test:component  # component tests in test/component/
-npm run test:coverage   # tests with a v8 coverage report in coverage/
-npm run build           # compile the publishable package into dist/
-```
-
-The component tests build the package as it is published, install it beside a small Express service in `test/component/fixtures/`, and run that service as a real process: real requests, real signals, real exit codes. The fixture is TypeScript run directly by Node, which needs Node.js 22.18 or later.
+- **A request without a tenant never reaches your code.** In a multi-tenant service the org ID must come from the caller; without one the middleware answers `400` rather than guess. `run()` refuses a blank org ID, and the context it hands out is frozen, so nothing can switch tenants partway through a request. A single-tenant service names its one org instead, and a header can't override it.
+- **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short.
+- **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the fatal handlers log and exit `1` without attempting a graceful shutdown, and leave the restart to the orchestrator.
+- **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
+- **One registration per process.** Calling `setupGracefulShutdown` or `registerFatalHandlers` twice throws, instead of silently ignoring a second server or logging every failure twice.
+- **You only load what you use.** `node-cron`, the only runtime dependency, sits behind the `/cron` subpath, and the `exports` map keeps internals private.
+- **Tested the way it runs.** Unit tests hold coverage at 100%, enforced in CI. Component tests build the package as published, install it beside a real Express service, and drive that service as a separate process with real requests, real signals and real exit codes.
 
 ## Install
 
 ```bash
 npm i @jtkunley/service-runtime
+```
+
+Requires Node.js 22 or later. Bring your own logger: anything that implements the small `RootLogger` interface, `child(module, action)` returning `info`, `warn` and `error`.
+
+## Quick start
+
+A service wired end to end. The component tests run a service much like this one, in [`test/component/fixtures/service.mts`](test/component/fixtures/service.mts).
+
+```ts
+import { createServer } from 'node:http';
+import express from 'express';
+import {
+  createExpressMiddleware,
+  createFetchWrapper,
+  createShutdownState,
+  getOrgId,
+  registerFatalHandlers,
+  setupGracefulShutdown,
+} from '@jtkunley/service-runtime';
+import { createCron } from '@jtkunley/service-runtime/cron';
+import { rootLogger } from './logger'; // your RootLogger implementation
+
+registerFatalHandlers(rootLogger); // first, so a failure while starting is caught
+
+const state = createShutdownState();
+const fetch = createFetchWrapper(); // forwards x-org-id and x-request-id downstream
+
+const app = express();
+app.get('/readiness', (_req, res) => {
+  res.sendStatus(state.isShuttingDown() ? 503 : 200);
+});
+app.use(createExpressMiddleware({ logger: rootLogger.child('http', 'request') }));
+app.get('/orders', async (_req, res) => {
+  const orders = await fetch(`https://orders.internal/orgs/${getOrgId()}/orders`);
+  res.json(await orders.json());
+});
+
+const purge = createCron({ name: 'purge', schedule: '0 * * * *', run: purgeExpired });
+purge.start();
+
+const server = createServer(app).listen(3000);
+setupGracefulShutdown(server, rootLogger, [() => purge.stop(), closeDb], { state });
 ```
 
 ## Request context
@@ -387,3 +431,47 @@ Returns a `CronController`. The `node-cron` task is created stopped, named after
 | `stop()` | Stops scheduling; by default waits for in-flight runs (see `waitForCompletionOnStop`). |
 | `isStarted()` | Whether `start()` has been called without a subsequent `stop()`. |
 | `isActive()` | Whether at least one `run()` is currently in progress. |
+
+---
+
+## Development
+
+Requires Node.js 22.18 or later, which runs the TypeScript component fixture directly.
+
+```bash
+npm install
+npm run check           # typecheck, lint, formatting and all tests
+npm run test:unit       # unit tests, next to the source in src/
+npm run test:component  # component tests in test/component/
+npm run test:coverage   # all tests, failing below 100% coverage
+npm run format          # format with Prettier
+npm run build           # compile the publishable package into dist/
+```
+
+```
+src/
+  index.ts              the root entry point
+  lib/context/          request context, Express and Koa middleware, fetch wrapper
+  lib/lifecycle/        graceful shutdown, shutdown state, fatal error handlers
+  lib/cron/             createCron, the /cron entry point
+  lib/tier/             deployment tier checks, the /tier entry point
+  lib/shared/           logger types and error helpers
+  **/__tests__/         unit tests, one spec per source file
+test/component/         component tests against the built package
+```
+
+Each source file has its unit spec beside it in `__tests__`, named after it. The component tests build the package as it is published, install it beside a small Express service in [`test/component/fixtures/`](test/component/fixtures/), and run that service as a separate process.
+
+### Publishing
+
+`main`, `types` and `exports` in package.json point at built output. `npm run build` compiles it into `dist/src/` and copies `package.json`, this README, the changelog and the license into `dist/`, which is the directory to publish:
+
+```bash
+npm run build && npm publish dist
+```
+
+Publishing from the repository root is refused, since it would ship the TypeScript sources.
+
+## License
+
+[MIT](LICENSE)
