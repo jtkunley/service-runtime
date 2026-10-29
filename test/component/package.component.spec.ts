@@ -27,6 +27,21 @@ describe('the installed package', () => {
         );
     });
 
+    // configureService wires these in the right order; exported, they could be wired wrongly.
+    it.each([
+        'configureContext',
+        'createExpressMiddleware',
+        'createFetchWrapper',
+        'createShutdownState',
+        'registerFatalHandlers',
+        'setupGracefulShutdown',
+    ])('keeps %s private, behind configureService', (name) => {
+        const root = consumerRequire('@jtkunley/service-runtime') as Record<string, unknown>;
+
+        expect(root).toHaveProperty('configureService');
+        expect(root).not.toHaveProperty(name);
+    });
+
     it.each([
         '/shutdown',
         '/context',

@@ -1,26 +1,18 @@
-export type { ChildLogger, LogData, RootLogger } from './lib/shared/logger';
-
 export {
-    setupGracefulShutdown,
-    type CleanupFn,
-    type GracefulShutdown,
-    type GracefulShutdownOptions,
-} from './lib/shutdown/gracefulShutdown';
-export { createShutdownState, type ShutdownState } from './lib/shutdown/shutdownState';
-export { registerFatalHandlers } from './lib/fatal/fatalHandlers';
-
-export {
-    configureContext,
-    type Context,
-    type ContextConfig,
-    type ContextEntry,
-    type ContextRequest,
-    type ContextSource,
-    type ContextValues,
+    configureService,
+    type ListenOptions,
+    type Service,
+    type ServiceOptions,
+} from './lib/service/configureService';
+export type {
+    ContextConfig,
+    ContextEntry,
+    ContextRequest,
+    ContextSource,
+    ContextValues,
 } from './lib/context/configureContext';
-export type { ContextMiddlewareOptions } from './lib/middleware/resolveContext';
-export { createExpressMiddleware } from './lib/middleware/express';
-export { createFetchWrapper, type FetchWrapperOptions } from './lib/fetch/fetchWrapper';
+export type { CleanupFn } from './lib/shutdown/gracefulShutdown';
+export type { ChildLogger, LogData, RootLogger } from './lib/shared/logger';
 
 export {
     getTier,

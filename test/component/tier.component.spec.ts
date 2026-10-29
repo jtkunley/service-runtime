@@ -12,7 +12,7 @@ describe('the deployment tier in a running service', () => {
     ])('reads TIER=%j from the environment', async (tier, expected) => {
         const service = await startService(tier === undefined ? {} : { TIER: tier });
 
-        const res = await fetch(`${service.url}/health`);
+        const res = await fetch(`${service.url}/tier`);
 
         expect(await res.json()).toEqual(expected);
     });

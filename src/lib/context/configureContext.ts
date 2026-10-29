@@ -27,7 +27,7 @@ export interface ContextEntry {
 export type ContextConfig = Readonly<Record<string, ContextEntry>>;
 
 /** Rejects attributes `ContextEntry` doesn't have, which inference would otherwise let through silently. */
-type NoUnknownAttributes<C> = {
+export type NoUnknownAttributes<C> = {
     [K in keyof C]: { [A in Exclude<keyof C[K], keyof ContextEntry>]: never };
 };
 

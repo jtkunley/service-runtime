@@ -1,0 +1,280 @@
+import { createServer, type Server } from 'http';
+import type { AddressInfo } from 'net';
+import { describe, it, expect, vi, beforeEach, afterEach, expectTypeOf } from 'vitest';
+import type { ChildLogger, RootLogger } from '../../shared/logger';
+import type { GracefulShutdownOptions } from '../../shutdown/gracefulShutdown';
+
+const mocks = vi.hoisted(() => ({
+    registerFatalHandlers: vi.fn(),
+    setupGracefulShutdown: vi.fn(),
+}));
+vi.mock('../../fatal/fatalHandlers', () => ({
+    registerFatalHandlers: mocks.registerFatalHandlers,
+}));
+vi.mock('../../shutdown/gracefulShutdown', () => ({
+    setupGracefulShutdown: mocks.setupGracefulShutdown,
+}));
+
+const CONTEXT = {
+    tenantId: {
+        value: (req: { headers: Readonly<Record<string, string | undefined>> }) =>
+            req.headers['x-tenant-id'],
+        required: true,
+        forward: { header: 'x-tenant-id', to: 'internal' },
+    },
+    requestId: {
+        value: () => 'req-1',
+        forward: { header: 'x-request-id', to: 'all' },
+    },
+} as const;
+
+function createMockRootLogger(): RootLogger & { childLogger: ChildLogger } {
+    const childLogger: ChildLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    return { child: vi.fn(() => childLogger), childLogger };
+}
+
+/** The server and options `listen` handed to graceful shutdown. */
+const shutdownCall = () =>
+    mocks.setupGracefulShutdown.mock.calls[0] as [
+        Server,
+        RootLogger,
+        (() => void)[],
+        GracefulShutdownOptions,
+    ];
+
+describe('configureService', () => {
+    let configureService: typeof import('../configureService.js').configureService;
+    const servers: Server[] = [];
+
+    const configure = (logger: RootLogger = createMockRootLogger()) =>
+        configureService({ logger, context: CONTEXT });
+
+    /** Listens on a free port, returning the base URL and the server for cleanup. */
+    const listen = async (
+        service: ReturnType<typeof configure>,
+        app = vi.fn((_req: unknown, res: { end(body: string): void }) => res.end('app')),
+        options: Partial<Parameters<typeof service.listen>[1]> = {},
+    ) => {
+        const { port } = await service.listen(app, { port: 0, host: '127.0.0.1', ...options });
+        servers.push(shutdownCall()[0]);
+        return { url: `http://127.0.0.1:${String(port)}`, app };
+    };
+
+    beforeEach(async () => {
+        vi.resetModules();
+        vi.clearAllMocks();
+        configureService = (await import('../configureService.js')).configureService;
+    });
+
+    afterEach(async () => {
+        await Promise.all(
+            servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))),
+        );
+        vi.restoreAllMocks();
+    });
+
+    describe('configuring', () => {
+        it('registers the fatal handlers at once, before the app is built', () => {
+            const logger = createMockRootLogger();
+
+            configure(logger);
+
+            expect(mocks.registerFatalHandlers).toHaveBeenCalledWith(logger);
+            expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
+        });
+
+        it('throws on a second call, registering nothing more', () => {
+            configure();
+
+            expect(() => configure()).toThrow(
+                'configureService can only be called once per process',
+            );
+            expect(mocks.registerFatalHandlers).toHaveBeenCalledOnce();
+        });
+
+        it('stays unconfigured when the fatal handlers cannot register, so a retry still works', () => {
+            mocks.registerFatalHandlers.mockImplementationOnce(() => {
+                throw new Error('no child');
+            });
+
+            expect(() => configure()).toThrow('no child');
+            expect(() => configure()).not.toThrow();
+        });
+
+        it('types the context values from the entries', () => {
+            const service = configure();
+
+            service.context.run({ headers: { 'x-tenant-id': 'tenant-1' } }, () => {
+                expectTypeOf(service.context.get('tenantId')).toEqualTypeOf<string>();
+                expectTypeOf(service.context.get('requestId')).toEqualTypeOf<string | undefined>();
+                expect(service.context.getStore()).toEqual({
+                    tenantId: 'tenant-1',
+                    requestId: 'req-1',
+                });
+            });
+        });
+
+        it('makes an attribute ContextEntry does not have a compile error', () => {
+            configureService({
+                logger: createMockRootLogger(),
+                // @ts-expect-error -- a misspelt attribute would otherwise be ignored silently
+                context: { entry: { value: () => 'v', requried: true } },
+            });
+        });
+    });
+
+    describe('middleware', () => {
+        const res = () => {
+            const json = vi.fn();
+            return { status: vi.fn(() => ({ json })), json };
+        };
+
+        it('runs the rest of the request inside its context', () => {
+            const service = configure();
+            let seen: unknown;
+
+            service.middleware(
+                { headers: { 'x-tenant-id': 'tenant-1' }, method: 'GET', originalUrl: '/orders' },
+                res(),
+                () => (seen = service.context.getStore()),
+            );
+
+            expect(seen).toEqual({ tenantId: 'tenant-1', requestId: 'req-1' });
+        });
+
+        it('answers 400 to a request missing a required value, logging through server/context', () => {
+            const logger = createMockRootLogger();
+            const service = configure(logger);
+            const response = res();
+            const next = vi.fn();
+
+            service.middleware(
+                { headers: {}, method: 'GET', originalUrl: '/orders' },
+                response,
+                next,
+            );
+
+            expect(next).not.toHaveBeenCalled();
+            expect(response.status).toHaveBeenCalledWith(400);
+            expect(logger.child).toHaveBeenCalledWith('server', 'context');
+            expect(logger.childLogger.error).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('fetch', () => {
+        it.each([
+            ['fetch', { 'x-tenant-id': 'tenant-1', 'x-request-id': 'req-1' }],
+            ['fetchExternal', { 'x-request-id': 'req-1' }],
+        ] as const)('%s forwards the values meant for its destination', async (method, sent) => {
+            const fetchSpy = vi
+                .spyOn(globalThis, 'fetch')
+                .mockResolvedValue(new Response(null, { status: 204 }));
+            const service = configure();
+
+            await service.context.run({ headers: { 'x-tenant-id': 'tenant-1' } }, () =>
+                service[method]('https://api.example.com'),
+            );
+
+            const [, init] = fetchSpy.mock.calls[0]!;
+            expect(Object.fromEntries(new Headers(init?.headers))).toEqual(sent);
+        });
+    });
+
+    describe('listen', () => {
+        it('starts the server and hands it, with the cleanups and the shutdown state, to graceful shutdown', async () => {
+            const logger = createMockRootLogger();
+            const service = configure(logger);
+            const first = vi.fn();
+            const onShutdownStart = vi.fn();
+            service.onShutdown(first);
+
+            const { url } = await listen(service, undefined, {
+                forceExitMs: 5_000,
+                onShutdownStart,
+            });
+            const later = vi.fn();
+            service.onShutdown(later);
+
+            const [server, shutdownLogger, cleanups, options] = shutdownCall();
+            expect(server.listening).toBe(true);
+            expect(shutdownLogger).toBe(logger);
+            expect(cleanups).toEqual([first, later]);
+            expect(options).toMatchObject({ forceExitMs: 5_000, onShutdownStart });
+            expect(await (await fetch(`${url}/orders`)).text()).toBe('app');
+        });
+
+        it('resolves with the address it bound', async () => {
+            const service = configure();
+
+            const address = await service.listen(vi.fn(), { port: 0, host: '127.0.0.1' });
+            servers.push(shutdownCall()[0]);
+
+            expect(address).toEqual(shutdownCall()[0].address());
+        });
+
+        it('throws on a second call', async () => {
+            const service = configure();
+            await listen(service);
+
+            await expect(service.listen(vi.fn(), { port: 0 })).rejects.toThrow(
+                'listen() can only be called once',
+            );
+        });
+
+        it('rejects when the port is taken', async () => {
+            const taken = createServer();
+            await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve));
+            servers.push(taken);
+            const service = configure();
+
+            await expect(
+                service.listen(vi.fn(), {
+                    port: (taken.address() as AddressInfo).port,
+                    host: '127.0.0.1',
+                }),
+            ).rejects.toThrow(expect.objectContaining({ code: 'EADDRINUSE' }) as Error);
+        });
+    });
+
+    describe('health probes', () => {
+        it('answers readiness 200, then 503 once shutdown starts, without reaching the app', async () => {
+            const service = configure();
+            const { url, app } = await listen(service);
+
+            expect((await fetch(`${url}/readiness`)).status).toBe(200);
+            shutdownCall()[3].state?.begin();
+
+            expect(service.isShuttingDown()).toBe(true);
+            expect((await fetch(`${url}/readiness?probe=k8s`)).status).toBe(503);
+            expect(app).not.toHaveBeenCalled();
+        });
+
+        it('answers liveness 200, even while shutting down', async () => {
+            const service = configure();
+            const { url, app } = await listen(service);
+            shutdownCall()[3].state?.begin();
+
+            expect((await fetch(`${url}/liveness`, { method: 'HEAD' })).status).toBe(200);
+            expect(app).not.toHaveBeenCalled();
+        });
+
+        it('leaves other methods on the probe paths to the app', async () => {
+            const { url, app } = await listen(configure());
+
+            await fetch(`${url}/readiness`, { method: 'POST' });
+
+            expect(app).toHaveBeenCalledOnce();
+        });
+
+        it('serves probes on the paths given, and none where turned off', async () => {
+            const { url, app } = await listen(configure(), undefined, {
+                probes: { readiness: '/ready', liveness: false },
+            });
+
+            expect((await fetch(`${url}/ready`)).status).toBe(200);
+            expect(await (await fetch(`${url}/liveness`)).text()).toBe('app');
+            expect(await (await fetch(`${url}/readiness`)).text()).toBe('app');
+            expect(app).toHaveBeenCalledTimes(2);
+        });
+    });
+});

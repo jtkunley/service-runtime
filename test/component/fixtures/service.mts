@@ -1,36 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import express from 'express';
 import {
-    configureContext,
-    createExpressMiddleware,
-    createFetchWrapper,
-    createShutdownState,
-    registerFatalHandlers,
-    setupGracefulShutdown,
-    type CleanupFn,
+    configureService,
+    getTier,
+    isNonProdTier,
+    isProdTier,
     type RootLogger,
 } from '@jtkunley/service-runtime';
-import { getTier, isNonProdTier, isProdTier } from '@jtkunley/service-runtime/tier';
 
 const env = process.env;
 const defaultTenantId = env['DEFAULT_TENANT_ID'];
 const forceExitMs = env['FORCE_EXIT_MS'];
-
-const context = configureContext({
-    // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
-    tenantId: {
-        value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
-        required: true,
-        forward: { header: 'x-tenant-id', to: 'internal' },
-    },
-    // Request threading: one ID across every service a request touches, so its logs join up.
-    requestId: {
-        value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-        forward: { header: 'x-request-id', to: 'all' },
-    },
-});
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Adds the request's context values to every line, as a logger's own context injection would. */
 const rootLogger: RootLogger = {
@@ -42,7 +23,7 @@ const rootLogger: RootLogger = {
                 action,
                 message,
                 error: error?.message,
-                ...context.getStore(),
+                ...service.context.getStore(),
                 ...data,
             };
             process.stdout.write(`${JSON.stringify(line)}\n`);
@@ -55,44 +36,53 @@ const rootLogger: RootLogger = {
     },
     // Slow on purpose, so the tests can tell the process waited for it.
     flush: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await sleep(100);
         process.stdout.write(`${JSON.stringify({ level: 'info', message: 'Logs flushed' })}\n`);
     },
 };
 
-registerFatalHandlers(rootLogger);
+const service = configureService({
+    logger: rootLogger,
+    context: {
+        // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
+        tenantId: {
+            value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
+            required: true,
+            forward: { header: 'x-tenant-id', to: 'internal' },
+        },
+        // Request threading: one ID across every service a request touches, so its logs join up.
+        requestId: {
+            value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
+            forward: { header: 'x-request-id', to: 'all' },
+        },
+    },
+});
 
 const log = rootLogger.child('fixture', 'service');
-const state = createShutdownState();
-const wrappedFetch = createFetchWrapper(context);
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 const app = express();
 
-app.get('/ready', (_req, res) => {
-    res.sendStatus(state.isShuttingDown() ? 503 : 200);
-});
-app.get('/health', (_req, res) => {
+app.get('/tier', (_req, res) => {
     const tier = getTier();
     res.json({ tier: tier ?? null, nonProd: isNonProdTier(tier), prod: isProdTier(tier) });
 });
 
-app.use(createExpressMiddleware(context, { logger: rootLogger.child('server', 'context') }));
+app.use(service.middleware);
 
 app.get('/context', (_req, res) => {
-    res.json(context.getStore());
+    res.json(service.context.getStore());
 });
 app.get('/headers', (req, res) => {
     res.json({ tenantId: req.get('x-tenant-id'), requestId: req.get('x-request-id') });
 });
 app.get('/call', async (req, res) => {
-    const downstream = await wrappedFetch(req.query['url'] as string);
-    res.json({ context: context.getStore(), downstream: await downstream.json() });
+    const fetchDownstream = req.query['external'] ? service.fetchExternal : service.fetch;
+    const downstream = await fetchDownstream(req.query['url'] as string);
+    res.json({ context: service.context.getStore(), downstream: await downstream.json() });
 });
 app.get('/slow', async (req, res) => {
     log.info('Slow request started', {});
     await sleep(Number(req.query['ms']));
-    res.json(context.getStore());
+    res.json(service.context.getStore());
 });
 app.get('/hang', () => {
     log.info('Hanging request started', {});
@@ -108,22 +98,19 @@ app.get('/reject', (_req, res) => {
     res.sendStatus(202);
 });
 
-const cleanups: CleanupFn[] = [];
 if (env['FAIL_CLEANUP']) {
-    cleanups.push(function flushQueue() {
+    service.onShutdown(function flushQueue() {
         throw new Error('queue unreachable');
     });
 }
-cleanups.push(function closeDatabase() {
+service.onShutdown(function closeDatabase() {
     log.info('Database closed', {});
 });
 
-const server = createServer(app);
-setupGracefulShutdown(server, rootLogger, cleanups, {
-    state,
+const { port } = await service.listen(app, {
+    port: 0,
+    host: '127.0.0.1',
     forceExitMs: forceExitMs ? Number(forceExitMs) : undefined,
     onShutdownStart: () => sleep(Number(env['SHUTDOWN_DELAY_MS'] ?? 0)),
 });
-server.listen(0, '127.0.0.1', () => {
-    log.info('Listening', { port: (server.address() as AddressInfo).port });
-});
+log.info('Listening', { port });

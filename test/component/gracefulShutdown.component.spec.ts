@@ -21,16 +21,18 @@ function connectionRefused(url: string): Promise<boolean> {
 describe('graceful shutdown of a running service', () => {
     afterEach(stopServices);
 
-    it('on SIGTERM, fails readiness, finishes the in-flight request in its context, refuses new connections, cleans up, flushes the logger and exits 0', async () => {
+    it('on SIGTERM, fails readiness but not liveness, finishes the in-flight request in its context, refuses new connections, cleans up, flushes the logger and exits 0', async () => {
         const service = await startService({ SHUTDOWN_DELAY_MS: '500' });
-        expect((await fetch(`${service.url}/ready`)).status).toBe(200);
+        expect((await fetch(`${service.url}/readiness`)).status).toBe(200);
+        expect((await fetch(`${service.url}/liveness`)).status).toBe(200);
         const inFlight = fetch(`${service.url}/slow?ms=1000`, { headers: BOTH_IDS });
         await service.waitForLog('Slow request started');
 
         service.signal('SIGTERM');
         await service.waitForLog('Received shutdown signal, closing server...');
 
-        expect((await fetch(`${service.url}/ready`)).status).toBe(503);
+        expect((await fetch(`${service.url}/readiness`)).status).toBe(503);
+        expect((await fetch(`${service.url}/liveness`)).status).toBe(200);
         expect(await (await inFlight).json()).toEqual({ tenantId: 'tenant-1', requestId: 'req-1' });
         expect(await connectionRefused(service.url)).toBe(true);
         expect(await service.exited).toBe(0);

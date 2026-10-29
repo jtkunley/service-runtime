@@ -31,6 +31,17 @@ describe('request context in a running service', () => {
         });
     });
 
+    it('answers the health probes without needing any context values', async () => {
+        const service = await startService();
+
+        const [readiness, liveness] = await Promise.all([
+            fetch(`${service.url}/readiness`),
+            fetch(`${service.url}/liveness`),
+        ]);
+
+        expect([readiness.status, liveness.status]).toEqual([200, 200]);
+    });
+
     it('makes the values available to the logger on every line inside a request', async () => {
         const service = await startService();
 
@@ -77,5 +88,19 @@ describe('request context in a running service', () => {
         };
         expect(context.requestId).toMatch(/^[0-9a-f-]{36}$/);
         expect(received.requestId).toBe(context.requestId);
+    });
+
+    it('sends a third-party API only the values forwarded to every destination', async () => {
+        const [upstream, thirdParty] = await Promise.all([
+            startService(),
+            startService({ DEFAULT_TENANT_ID: 'their-tenant' }),
+        ]);
+
+        const res = await fetch(`${upstream.url}/call?external=1&url=${thirdParty.url}/headers`, {
+            headers: BOTH_IDS,
+        });
+
+        const { downstream } = (await res.json()) as { downstream: object };
+        expect(downstream).toEqual({ requestId: 'req-1' });
     });
 });
