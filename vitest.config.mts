@@ -10,6 +10,7 @@ export default defineConfig({
             include: ['src/**/*.ts'],
             reporter: ['text', 'lcov'],
             reportsDirectory: 'coverage',
+            thresholds: { 100: true },
         },
         projects: [
             {
