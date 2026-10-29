@@ -26,28 +26,18 @@ describe('the installed package', () => {
         );
     });
 
-    // configureService wires these in the right order; exported, they could be wired wrongly.
-    it.each([
-        'configureContext',
-        'createExpressMiddleware',
-        'createFetchWrapper',
-        'createShutdownState',
-        'registerFatalHandlers',
-        'setupGracefulShutdown',
-    ])('keeps %s private, behind configureService', (name) => {
+    // configureService wires everything else in the right order; exported, it could be wired wrongly.
+    it('exports configureService and nothing else at runtime', () => {
         const root = consumerRequire('@jtkunley/service-runtime') as Record<string, unknown>;
 
-        expect(root).toHaveProperty('configureService');
-        expect(root).not.toHaveProperty(name);
+        expect(Object.keys(root)).toEqual(['configureService']);
     });
 
     it.each([
-        '/shutdown',
-        '/tier',
-        '/context',
         '/src',
         '/src/index',
-        '/cron',
+        '/src/index.js',
+        '/src/lib/service/configureService.js',
         '/src/lib/shutdown/gracefulShutdown.js',
     ])('does not expose @jtkunley/service-runtime%s', (subpath) => {
         expect(() => consumerRequire.resolve(`@jtkunley/service-runtime${subpath}`)).toThrow(

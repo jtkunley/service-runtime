@@ -293,7 +293,7 @@ const service = configureService({
 
 ### Types
 
-`ServiceOptions`, `Service` and `CleanupFn` describe the API above. `ContextEntry`, `ContextConfig`, `ContextRequest` (what a `value` function receives), `ContextSource` (what `run()` takes) and `ContextValues<C>` (the values of a configuration) are exported for annotating your own code, as are the logger interfaces `RootLogger`, `ChildLogger` and `LogData`.
+`ServiceOptions`, `Service`, `ContextMiddleware` and `CleanupFn` describe the API above. `ContextEntry`, `ContextConfig`, `Destinations`, `ContextRequest` (what a `value` function receives), `ContextSource` (what `run()` takes) and `ContextValues<C>` (the values of a configuration) are exported for annotating your own code, as are the logger interfaces `RootLogger`, `ChildLogger` and `LogData`.
 
 The package root and its `package.json` are the whole public surface: the `exports` map rejects deep imports.
 

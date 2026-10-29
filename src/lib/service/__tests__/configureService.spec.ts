@@ -3,7 +3,8 @@ import type { AddressInfo } from 'net';
 import { describe, it, expect, vi, beforeEach, afterEach, expectTypeOf } from 'vitest';
 import type { ChildLogger, RootLogger } from '../../shared/logger';
 import type { GracefulShutdownOptions } from '../../shutdown/gracefulShutdown';
-import type { ServiceOptions } from '../configureService';
+import type { ContextMiddleware } from '../../middleware/express';
+import type { Service, ServiceOptions } from '../configureService';
 
 const mocks = vi.hoisted(() => ({
     registerFatalHandlers: vi.fn(),
@@ -104,6 +105,13 @@ describe('configureService', () => {
                     requestId: 'req-1',
                 });
             });
+        });
+
+        it('can be annotated without type arguments when it declares no context', () => {
+            const options: ServiceOptions = { logger: createMockRootLogger(), port: 0 };
+            const service: Service = configureService(options);
+
+            expectTypeOf(service.middleware).toEqualTypeOf<ContextMiddleware>();
         });
 
         it('makes an attribute ContextEntry does not have a compile error', () => {

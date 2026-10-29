@@ -3,20 +3,18 @@ import type { ConfiguredContext, ContextConfig } from '../context/configureConte
 import type { ChildLogger } from '../shared/logger';
 import { resolveContext } from './resolveContext';
 
-interface Req {
-    headers: IncomingHttpHeaders;
-    method: string;
-    originalUrl: string;
-}
-interface Res {
-    status(code: number): { json(body: unknown): void };
-}
+/** The parts of Express's request and response it uses, so any compatible framework fits. */
+export type ContextMiddleware = (
+    req: { headers: IncomingHttpHeaders; method: string; originalUrl: string },
+    res: { status(code: number): { json(body: unknown): void } },
+    next: () => void,
+) => void;
 
 export function createExpressMiddleware<C extends ContextConfig>(
     context: ConfiguredContext<C>,
     logger: Pick<ChildLogger, 'error'>,
-) {
-    return (req: Req, res: Res, next: () => void): void => {
+): ContextMiddleware {
+    return (req, res, next) => {
         const { headers, method, originalUrl } = req;
         // The full path, mount point included, without the query string, which can carry secrets such as tokens.
         const path = originalUrl.split('?')[0]!;

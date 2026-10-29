@@ -19,12 +19,15 @@ import {
     type ValidDestinations,
 } from '../context/getHeaders';
 import { registerFatalHandlers } from '../fatal/fatalHandlers';
-import { createExpressMiddleware } from '../middleware/express';
+import { createExpressMiddleware, type ContextMiddleware } from '../middleware/express';
 import type { RootLogger } from '../shared/logger';
 import { setupGracefulShutdown, type CleanupFn } from '../shutdown/gracefulShutdown';
 import { createShutdownState } from '../shutdown/shutdownState';
 
-export interface ServiceOptions<C extends ContextConfig, D extends Destinations> {
+export interface ServiceOptions<
+    C extends ContextConfig = Record<never, never>,
+    D extends Destinations = Record<never, never>,
+> {
     logger: RootLogger;
     /** `0` picks a free one. */
     port: number;
@@ -70,13 +73,16 @@ export interface ServiceOptions<C extends ContextConfig, D extends Destinations>
     onShutdownStart?: () => void | Promise<void>;
 }
 
-export interface Service<C extends ContextConfig, D extends Destinations> {
+export interface Service<
+    C extends ContextConfig = Record<never, never>,
+    D extends Destinations = Record<never, never>,
+> {
     readonly context: Context<C> & {
         /** The headers for a call to `destination`, from the values it lists; empty outside a request. */
         readonly getHeaders: GetHeaders<D>;
     };
     /** Express middleware that fills the context, answering `400` for a request missing a required value. */
-    readonly middleware: ReturnType<typeof createExpressMiddleware>;
+    readonly middleware: ContextMiddleware;
     readonly isShuttingDown: () => boolean;
     /**
      * Registers the fatal error handlers, then starts the server with graceful
