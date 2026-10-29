@@ -33,6 +33,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 - **The package carries values; your service decides what they mean.** Tenancy, request IDs and anything else are declared by the service, each with a function that works out its value and attributes for whether it's required and where it's forwarded. A request missing a required value is answered `400` before it reaches your code, and the values are frozen for the rest of the request, so nothing can switch tenants partway through. Third-party APIs only receive the values marked for every destination.
 - **Shutdown drains, it doesn't just stop.** Readiness fails first, so the load balancer stops routing here, then the server stops accepting connections. `server.close()` alone leaves a keep-alive connection open if it was busy when shutdown began, so idle connections are swept every second until the last response is out. Cleanups then run in order, each failure named in the log, all within a hard deadline. A second signal can't cut cleanup short.
 - **After a fatal error, exit.** An uncaught exception leaves the process in an unknown state, so the fatal handlers log and exit `1` without attempting a graceful shutdown, and leave the restart to the orchestrator.
+- **The last log line gets out.** Every exit, clean, forced or fatal, first waits for a logger that can `flush()`, for at most a second, so the line explaining the exit isn't lost in a buffer.
 - **Unknown tiers unlock nothing.** A tier on neither list, unset included, passes neither `isProdTier` nor `isNonProdTier`, so a misconfigured deployment can't switch on mocks or paging.
 - **One registration per process.** Calling `setupGracefulShutdown` or `registerFatalHandlers` twice throws, instead of silently ignoring a second server or logging every failure twice.
 - **Only what every service needs, and nothing it doesn't.** No runtime dependencies, no framework beyond a thin Express adapter, and the `exports` map keeps internals private. Scheduled jobs, which not every service has, live in [`@jtkunley/cron`](https://github.com/jtkunley/cron).
@@ -44,7 +45,7 @@ The runtime plumbing every Node.js HTTP service ends up writing, done once and d
 npm i @jtkunley/service-runtime
 ```
 
-Requires Node.js 22 or later. Bring your own logger: anything that implements the small `RootLogger` interface, `child(module, action)` returning `info`, `warn` and `error`.
+Requires Node.js 22 or later. Bring your own logger: anything that implements the small `RootLogger` interface, `child(module, action)` returning `info`, `warn` and `error`, and optionally `flush()`, which is awaited before the process exits. A [`@jtkunley/logger`](https://github.com/jtkunley/logger) root logger fits as it is.
 
 ## Quick start
 
@@ -260,7 +261,7 @@ if (isNonProdTier(getTier())) {
 4. Runs your cleanup functions one after another, in order
 5. Exits with code 0, or 1 if any step failed
 
-The whole shutdown never takes longer than `forceExitMs` (30 seconds by default); at the deadline the process exits with code 1. A step that fails is logged and the next one still runs. A repeated signal is logged and ignored, so it can't end the process in the middle of cleanup.
+The whole shutdown never takes longer than `forceExitMs` (30 seconds by default); at the deadline the process exits with code 1. Before any exit, a logger with `flush()` gets up to a second to write out what it has buffered, so the last lines, the timeout included, aren't lost. A step that fails is logged and the next one still runs. A repeated signal is logged and ignored, so it can't end the process in the middle of cleanup.
 
 ### Usage
 
@@ -298,7 +299,7 @@ List cleanups in dependency order: close what produces work first (e.g. a messag
 
 ### Fatal errors
 
-`registerFatalHandlers` logs an `uncaughtException` or `unhandledRejection` and exits with code 1 at once. The process is in an unknown state after either, so it skips graceful shutdown and leaves the restart to the orchestrator.
+`registerFatalHandlers` logs an `uncaughtException` or `unhandledRejection` and exits with code 1 as soon as the logger has flushed, or at once for a logger without `flush()`. A second failure while it flushes is logged, but doesn't start another exit. The process is in an unknown state after either, so it skips graceful shutdown and leaves the restart to the orchestrator.
 
 Neither function waits for the logger to flush before exiting. If your logger buffers its output, flush it in your last cleanup function.
 
@@ -312,7 +313,7 @@ Call it once per process: a second call throws an `Error`. An invalid `forceExit
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1. A positive integer. |
+| `forceExitMs` | `number` | `30000` | The most shutdown may take, from the first signal to the exit; then the process exits with code 1, after up to a second for the logger to flush. A positive integer. |
 | `onShutdownStart` | `() => void \| Promise<void>` | none | Runs once, after the state is marked and before the server closes, which waits for a returned promise. |
 | `state` | `ShutdownState` | a fresh one | The state to mark when shutdown begins, from `createShutdownState()`. |
 
@@ -332,7 +333,7 @@ type CleanupFn = () => void | Promise<void>;
 
 ## Related packages
 
-- [`@jtkunley/logger`](https://github.com/jtkunley/logger): structured JSON logging on pino, whose child loggers fit the `RootLogger` interface, and whose context injection adds the request's values to every line.
+- [`@jtkunley/logger`](https://github.com/jtkunley/logger): structured JSON logging on pino, whose root logger fits the `RootLogger` interface, `flush()` included, and whose context injection adds the request's values to every line.
 - [`@jtkunley/cron`](https://github.com/jtkunley/cron): scheduled jobs that skip overlapping runs and stop cleanly. Its `runInContext` option runs each tick in a request context, `(tick) => context.run({ headers: { 'x-tenant-id': tenantId } }, tick)`, and its `stop()` belongs in the shutdown cleanups.
 
 ## Development
