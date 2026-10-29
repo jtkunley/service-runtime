@@ -128,7 +128,7 @@ describe('createExpressMiddleware in a real Express app', () => {
         expect(route).not.toHaveBeenCalled();
     });
 
-    it('logs the full path when mounted on a router', async () => {
+    it('logs the full path when mounted on a router, without the query string', async () => {
         const logger = { warn: vi.fn(), error: vi.fn() };
         const router = express.Router();
         router.use(createExpressMiddleware(context, { logger }));
@@ -136,7 +136,7 @@ describe('createExpressMiddleware in a real Express app', () => {
         app.use('/api', router);
         const url = await serve(app);
 
-        await fetch(`${url}/api/orders`, { method: 'POST' });
+        await fetch(`${url}/api/orders?token=secret`, { method: 'POST' });
 
         expect(logger.error).toHaveBeenCalledWith(
             expect.any(String),

@@ -5,6 +5,7 @@ export interface ContextRequest {
     /** Lower-cased names; a header sent more than once has its values joined with `, `. */
     readonly headers: Readonly<Record<string, string | undefined>>;
     readonly method?: string;
+    /** For a request, without its query string. */
     readonly path?: string;
 }
 

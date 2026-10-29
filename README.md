@@ -129,7 +129,7 @@ configureService({
 
 | Attribute | Description |
 |-----------|-------------|
-| `value` | `(req) => string \| undefined`, called once at the start of each request with its headers (lower-cased names), method and path. The result is trimmed, and a blank one counts as absent. |
+| `value` | `(req) => string \| undefined`, called once at the start of each request with its headers (lower-cased names), method and path (without the query string). The result is trimmed, and a blank one counts as absent. |
 | `required` | Without a value, the middleware answers `400` and `run()` throws. |
 | `header` | The header the value travels under, to the destinations that list it. Without it, the value never leaves the service. |
 
@@ -149,7 +149,7 @@ service.context.get('requestId'); // string | undefined
 service.context.getStore();       // { tenantId, requestId }, frozen, or undefined outside a request
 ```
 
-`service.middleware` works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`; it's logged as an `error` through the child logger `server` / `context`, with the method, full path and the names of the missing entries.
+`service.middleware` works out every value at the start of each request and calls `next()` inside the context. A request missing a required value is answered `400` with `{ error: 'Missing required context value: tenantId' }` and never reaches `next()`; it's logged as an `error` through the child logger `server` / `context`, with the method, the path without its query string, which can carry secrets, and the names of the missing entries.
 
 `get` accepts only configured names, and its return type follows the entry's `required` attribute.
 
