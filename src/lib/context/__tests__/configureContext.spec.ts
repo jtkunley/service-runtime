@@ -6,8 +6,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 
 const makeContext = () =>
     configureContext({
-        tenantId: { value: (req) => req.headers['x-tenant-id'], required: true, log: true },
-        requestId: { value: (req) => req.headers['x-request-id'] ?? randomUUID(), log: true },
+        tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },
+        requestId: { value: (req) => req.headers['x-request-id'] ?? randomUUID() },
         locale: { value: (req) => req.headers['accept-language'] },
     });
 
@@ -166,6 +166,11 @@ describe('configureContext', () => {
                 context.get('unknown');
             });
         });
+
+        it('makes an attribute ContextEntry does not have a compile error', () => {
+            // @ts-expect-error -- a misspelt attribute would otherwise be ignored silently
+            configureContext({ entry: { value: () => 'v', requried: true } });
+        });
     });
 
     describe('getStore', () => {
@@ -183,26 +188,9 @@ describe('configureContext', () => {
         });
     });
 
-    describe('getLogData', () => {
-        it('holds only the entries marked log that have a value', () => {
-            const context = configureContext({
-                tenantId: { value: () => 'tenant-1', log: true },
-                traceId: { value: () => undefined, log: true },
-                secret: { value: () => 's3cret' },
-            });
-
-            context.run({ headers: {} }, () => {
-                expect(context.getLogData()).toEqual({ tenantId: 'tenant-1' });
-            });
-        });
-    });
-
     describe('outside a context', () => {
-        it('getStore is undefined and getLogData is empty', () => {
-            const context = makeContext();
-
-            expect(context.getStore()).toBeUndefined();
-            expect(context.getLogData()).toEqual({});
+        it('getStore is undefined', () => {
+            expect(makeContext().getStore()).toBeUndefined();
         });
 
         it('get throws', () => {

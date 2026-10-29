@@ -18,11 +18,11 @@ export interface CronOptions {
     waitForCompletionOnStop?: boolean;
 
     /**
-     * Each tick runs inside this context, so the job can read its values and a
-     * failed run is logged with them. Leave it out for a job that sets up its own
+     * Each tick runs inside this context, so the job, and a logger that injects
+     * context values, can read them. Leave it out for a job that sets up its own
      * contexts, such as one that works through every tenant in turn.
      */
-    context?: Pick<Context<ContextConfig>, 'run' | 'getLogData'>;
+    context?: Pick<Context<ContextConfig>, 'run'>;
     /** Where each tick's values come from. Default: no headers, so only the `value` functions decide. */
     source?: () => ContextSource;
 }
@@ -61,10 +61,7 @@ export function createCron(options: CronOptions): CronController {
     );
 
     function report(error: unknown): void {
-        logger?.error(`Cron "${name}" run failed`, toError(error), {
-            name,
-            ...context?.getLogData(),
-        });
+        logger?.error(`Cron "${name}" run failed`, toError(error), { name });
         try {
             onError?.(error);
         } catch (hookError) {
@@ -72,7 +69,7 @@ export function createCron(options: CronOptions): CronController {
         }
     }
 
-    /** Reports from inside the context, so the failure log carries the tick's values. */
+    /** Reports from inside the context, so the logger's own context injection sees the tick's values. */
     async function attempt(): Promise<void> {
         try {
             await run();

@@ -31,7 +31,7 @@ describe('request context in a running service', () => {
         });
     });
 
-    it('lets the app add the values marked log to its own log lines', async () => {
+    it('makes the values available to the logger on every line inside a request', async () => {
         const service = await startService();
 
         await fetch(`${service.url}/slow?ms=1`, { headers: BOTH_IDS });

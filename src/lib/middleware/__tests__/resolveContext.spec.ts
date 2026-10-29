@@ -5,9 +5,9 @@ import { configureContext } from '../../context/configureContext';
 import { resolveContext, type ContextMiddlewareOptions } from '../resolveContext';
 
 const context = configureContext({
-    tenantId: { value: (req) => req.headers['x-tenant-id'], required: true, log: true },
+    tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },
     region: { value: (req) => req.headers['x-region'], required: true },
-    requestId: { value: (req) => req.headers['x-request-id'] ?? randomUUID(), log: true },
+    requestId: { value: (req) => req.headers['x-request-id'] ?? randomUUID() },
     locale: { value: (req) => req.headers['accept-language'] },
 });
 
@@ -46,7 +46,7 @@ describe('resolveContext', () => {
         });
     });
 
-    it('logs a rejection with the request details and the logged values it did have', () => {
+    it('logs a rejection with only what the logger cannot know: method, path and missing entries', () => {
         const logger = { error: vi.fn() };
         const message = 'Missing required context value: region';
 
@@ -58,10 +58,7 @@ describe('resolveContext', () => {
         expect(logger.error).toHaveBeenCalledWith(message, new Error(message), {
             method: 'POST',
             path: '/orders',
-            userAgent: 'agent/1',
             missing: ['region'],
-            tenantId: 'tenant-1',
-            requestId: 'req-1',
         });
     });
 });

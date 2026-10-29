@@ -20,10 +20,33 @@ const defaultTenantId = env['DEFAULT_TENANT_ID'];
 const cronRunMs = env['CRON_RUN_MS'];
 const forceExitMs = env['FORCE_EXIT_MS'];
 
+const context = configureContext({
+    // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
+    tenantId: {
+        value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
+        required: true,
+        forward: { header: 'x-tenant-id', to: 'internal' },
+    },
+    // Request threading: one ID across every service a request touches, so its logs join up.
+    requestId: {
+        value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
+        forward: { header: 'x-request-id', to: 'all' },
+    },
+});
+
+/** Adds the request's context values to every line, as a logger's own context injection would. */
 const rootLogger: RootLogger = {
     child: (module, action) => {
         const write = (level: string, message: string, data: object, error?: Error) => {
-            const line = { level, module, action, message, error: error?.message, ...data };
+            const line = {
+                level,
+                module,
+                action,
+                message,
+                error: error?.message,
+                ...context.getStore(),
+                ...data,
+            };
             process.stdout.write(`${JSON.stringify(line)}\n`);
         };
         return {
@@ -35,22 +58,6 @@ const rootLogger: RootLogger = {
 };
 
 registerFatalHandlers(rootLogger);
-
-const context = configureContext({
-    // Multi-tenancy: which tenant a request acts for, so every service scopes its data to it.
-    tenantId: {
-        value: (req) => defaultTenantId ?? req.headers['x-tenant-id'],
-        required: true,
-        forward: { header: 'x-tenant-id', to: 'internal' },
-        log: true,
-    },
-    // Request threading: one ID across every service a request touches, so its logs join up.
-    requestId: {
-        value: (req) => req.headers['x-request-id']?.trim() || randomUUID(),
-        forward: { header: 'x-request-id', to: 'all' },
-        log: true,
-    },
-});
 
 const log = rootLogger.child('fixture', 'service');
 const state = createShutdownState();
@@ -80,7 +87,7 @@ app.get('/call', async (req, res) => {
     res.json({ context: context.getStore(), downstream: await downstream.json() });
 });
 app.get('/slow', async (req, res) => {
-    log.info('Slow request started', context.getLogData());
+    log.info('Slow request started', {});
     await sleep(Number(req.query['ms']));
     res.json(context.getStore());
 });
@@ -107,7 +114,7 @@ if (cronRunMs) {
         context,
         source: () => ({ headers: { 'x-tenant-id': 'tenant-cron' } }),
         run: async () => {
-            log.info('Heartbeat started', context.getLogData());
+            log.info('Heartbeat started', {});
             await sleep(Number(cronRunMs));
             if (env['CRON_FAIL']) throw new Error('heartbeat failed');
             log.info('Heartbeat finished', {});

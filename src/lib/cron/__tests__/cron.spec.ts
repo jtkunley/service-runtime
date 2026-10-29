@@ -293,8 +293,8 @@ describe('createCron', () => {
     describe('in a context', () => {
         let ticks = 0;
         const context = configureContext({
-            tenantId: { value: (req) => req.headers['x-tenant-id'], required: true, log: true },
-            tickId: { value: () => `tick-${++ticks}`, log: true },
+            tenantId: { value: (req) => req.headers['x-tenant-id'], required: true },
+            tickId: { value: () => `tick-${++ticks}` },
         });
         const SOURCE = () => ({ headers: { 'x-tenant-id': 'tenant-1' } });
 
@@ -316,9 +316,11 @@ describe('createCron', () => {
             expect(seen[1]).not.toEqual(seen[0]);
         });
 
-        it('logs a failed run with the tick’s values marked log', async () => {
+        it('reports a failed run from inside the tick’s context, where the logger can read it', async () => {
             const logger = makeLogger();
             const error = new Error('boom');
+            let seenByLogger: unknown;
+            logger.error.mockImplementation(() => (seenByLogger = context.getStore()));
 
             create({
                 name: 'ctx',
@@ -332,9 +334,8 @@ describe('createCron', () => {
             await vi.waitFor(() => expect(logger.error).toHaveBeenCalledOnce());
             expect(logger.error).toHaveBeenCalledWith('Cron "ctx" run failed', error, {
                 name: 'ctx',
-                tenantId: 'tenant-1',
-                tickId: expect.stringMatching(/^tick-/),
             });
+            expect(seenByLogger).toMatchObject({ tenantId: 'tenant-1' });
         });
 
         it('fails a tick missing a required value without running it, and keeps the schedule', async () => {

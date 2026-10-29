@@ -26,7 +26,7 @@ export function resolveContext<C extends ContextConfig>(
     { headers, method, path }: HttpRequest,
     { logger }: ContextMiddlewareOptions,
 ): ResolvedContext {
-    const { resolve, enter, logData } = contextInternals(context);
+    const { resolve, enter } = contextInternals(context);
     const request = toContextRequest({ headers, method, path });
     const { values, missing } = resolve(request);
     if (missing.length === 0) {
@@ -34,12 +34,8 @@ export function resolveContext<C extends ContextConfig>(
     }
 
     const error = missingValuesMessage(missing);
-    logger?.error(error, new Error(error), {
-        method,
-        path,
-        userAgent: request.headers['user-agent'],
-        missing,
-        ...logData(values),
-    });
+    // Only what the logger can't know: the request never entered a context, so
+    // none of its values reach the logger's own context injection.
+    logger?.error(error, new Error(error), { method, path, missing });
     return { error };
 }

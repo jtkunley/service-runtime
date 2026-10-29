@@ -22,11 +22,14 @@ export interface ContextEntry {
     required?: boolean;
     /** Without it the value never leaves the service. */
     forward?: { header: string; to: 'internal' | 'all' };
-    /** Include the value in `getLogData()` and in the middleware's log lines. */
-    log?: boolean;
 }
 
 export type ContextConfig = Readonly<Record<string, ContextEntry>>;
+
+/** Rejects attributes `ContextEntry` doesn't have, which inference would otherwise let through silently. */
+type NoUnknownAttributes<C> = {
+    [K in keyof C]: { [A in Exclude<keyof C[K], keyof ContextEntry>]: never };
+};
 
 export type ContextValues<C extends ContextConfig> = {
     readonly [K in keyof C]: C[K] extends { required: true } ? string : string | undefined;
@@ -38,8 +41,6 @@ export interface Context<C extends ContextConfig> {
     /** @throws Error outside a context. */
     get<K extends keyof C & string>(name: K): ContextValues<C>[K];
     getStore(): ContextValues<C> | undefined;
-    /** The values of entries marked `log`, to add to log lines; empty outside a context. */
-    getLogData(): Readonly<Record<string, string>>;
 }
 
 type Values = Readonly<Record<string, string | undefined>>;
@@ -53,7 +54,6 @@ interface ContextInternals {
     readonly config: ContextConfig;
     readonly resolve: (request: ContextRequest) => Resolution;
     readonly enter: <T>(values: Values, fn: () => T) => T;
-    readonly logData: (values: Values) => Record<string, string>;
 }
 
 const internals = new WeakMap<object, ContextInternals>();
@@ -80,7 +80,9 @@ export function missingValuesMessage(missing: readonly string[]): string {
  * Declares the values every request carries. Each is worked out once, when the
  * request starts, and is then fixed for the rest of it.
  */
-export function configureContext<const C extends ContextConfig>(config: C): Context<C> {
+export function configureContext<const C extends ContextConfig>(
+    config: C & NoUnknownAttributes<C>,
+): Context<C> {
     const storage = new AsyncLocalStorage<Values>();
     const entries = Object.entries(config);
 
@@ -94,15 +96,6 @@ export function configureContext<const C extends ContextConfig>(config: C): Cont
             .filter(([name, entry]) => entry.required && values[name] === undefined)
             .map(([name]) => name);
         return { values, missing };
-    };
-
-    const logData = (values: Values): Record<string, string> => {
-        const data: Record<string, string> = {};
-        for (const [name, entry] of entries) {
-            const value = values[name];
-            if (entry.log && value !== undefined) data[name] = value;
-        }
-        return data;
     };
 
     const current = (): Values => {
@@ -121,16 +114,11 @@ export function configureContext<const C extends ContextConfig>(config: C): Cont
         },
         get: (name) => current()[name] as ContextValues<C>[typeof name],
         getStore: () => storage.getStore() as ContextValues<C> | undefined,
-        getLogData() {
-            const values = storage.getStore();
-            return values ? logData(values) : {};
-        },
     };
     internals.set(context, {
         config,
         resolve,
         enter: (values, fn) => storage.run(values, fn),
-        logData,
     });
     return context;
 }
