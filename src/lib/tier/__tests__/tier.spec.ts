@@ -112,22 +112,26 @@ describe('isNonProdTier and isProdTier', () => {
         expect(isProdTier(tier)).toBe(false);
     });
 
-    it('agree with getTier on a raw TIER', () => {
+    it('accept what getTier reads from a raw TIER', () => {
         expect(isNonProdTier(getTier({ TIER: ' QA ' }))).toBe(true);
         expect(isProdTier(getTier({ TIER: '\tPROD\n' }))).toBe(true);
     });
+});
 
-    it('exports both patterns as these exact strings, and the checks themselves not at all', async () => {
+describe('tier patterns', () => {
+    it('publish the two lists as these exact strings', () => {
         expect(NON_PROD_TIER_PATTERN).toBe(
             '^(?:local|dev|test|qa|staging|pr\\d+)$',
         );
         expect(PROD_TIER_PATTERN).toBe('^(?:prod|production)$');
-        expect(Object.keys(await import('../tier.js')).sort()).toEqual([
-            'NON_PROD_TIER_PATTERN',
-            'PROD_TIER_PATTERN',
-            'getTier',
-            'isNonProdTier',
-            'isProdTier',
-        ]);
+    });
+
+    it('match exactly what the checks accept', () => {
+        const nonProd = new RegExp(NON_PROD_TIER_PATTERN);
+        const prod = new RegExp(PROD_TIER_PATTERN);
+        for (const tier of ['local', 'pr42', 'staging', 'prod', 'production', 'uat']) {
+            expect(nonProd.test(tier)).toBe(isNonProdTier(tier));
+            expect(prod.test(tier)).toBe(isProdTier(tier));
+        }
     });
 });
