@@ -11,11 +11,11 @@ import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { describe, expect, it } from 'vitest';
-import * as rootEntry from '../..';
-import * as cronEntry from '../cron/cron';
-import * as tierEntry from '../tier/tier';
+import * as rootEntry from '..';
+import * as cronEntry from '../lib/cron/cron';
+import * as tierEntry from '../lib/tier/tier';
 
-const SRC = resolve(__dirname, '../..');
+const SRC = resolve(__dirname, '..');
 
 function importGraph(entry: string): string[] {
     const seen = new Set<string>();
@@ -32,7 +32,7 @@ function importGraph(entry: string): string[] {
     return [...seen].map((file) => file.slice(SRC.length + 1));
 }
 
-describe('the package entries', () => {
+describe('what each entry loads', () => {
     // node-cron is the package's only runtime dependency; only ./cron may load it.
     it('the root loads nothing from lib/cron', () => {
         expect(
@@ -43,7 +43,9 @@ describe('the package entries', () => {
     it('./tier loads nothing else of the package', () => {
         expect(importGraph('lib/tier/tier.ts')).toEqual(['lib/tier/tier.ts']);
     });
+});
 
+describe('what each entry exports', () => {
     it('the root exports the lifecycle, request context and tier pieces', () => {
         expect(Object.keys(rootEntry).sort()).toEqual(
             [
@@ -85,7 +87,9 @@ describe('the package entries', () => {
             ].sort(),
         );
     });
+});
 
+describe('an installed copy of the package', () => {
     const SHIPPED = [
         'src/index.js',
         'src/lib/cron/cron.js',
