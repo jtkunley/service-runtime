@@ -93,12 +93,16 @@ export function configureService<
     const cleanups: CleanupFn[] = [];
 
     const listen = async (app: RequestListener, listenOptions: ListenOptions) => {
+        const { port, host, probes, forceExitMs, onShutdownStart } = listenOptions;
+        // Before anything process-wide, so a mistake can be corrected and listen called again.
+        if (forceExitMs !== undefined && !(Number.isInteger(forceExitMs) && forceExitMs > 0)) {
+            throw new RangeError('forceExitMs must be a positive integer');
+        }
         if (listening) {
             throw new Error('Only one service can listen per process');
         }
         listening = true;
         registerFatalHandlers(logger);
-        const { port, host, probes, forceExitMs, onShutdownStart } = listenOptions;
         // An unset path, such as from a missing environment variable, keeps the default;
         // only `false` turns a probe off.
         const readiness = probes?.readiness ?? READINESS_PATH;

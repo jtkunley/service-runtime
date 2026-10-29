@@ -219,6 +219,22 @@ describe('configureService', () => {
             expect(mocks.registerFatalHandlers).toHaveBeenCalledOnce();
         });
 
+        it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+            'refuses forceExitMs %s before registering anything, so listen can be called again',
+            async (forceExitMs) => {
+                const service = configure();
+
+                await expect(service.listen(vi.fn(), { port: 0, forceExitMs })).rejects.toThrow(
+                    new RangeError('forceExitMs must be a positive integer'),
+                );
+                expect(mocks.registerFatalHandlers).not.toHaveBeenCalled();
+                expect(mocks.setupGracefulShutdown).not.toHaveBeenCalled();
+
+                await listen(service);
+                expect(mocks.setupGracefulShutdown).toHaveBeenCalledOnce();
+            },
+        );
+
         it('rejects when the port is taken', async () => {
             const taken = createServer();
             await new Promise<void>((resolve) => taken.listen(0, '127.0.0.1', resolve));

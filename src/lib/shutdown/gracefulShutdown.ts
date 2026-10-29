@@ -50,9 +50,6 @@ export function setupGracefulShutdown(
     options: GracefulShutdownOptions = {},
 ): GracefulShutdown {
     const { forceExitMs = FORCE_EXIT_MS, onShutdownStart, state = createShutdownState() } = options;
-    if (!Number.isInteger(forceExitMs) || forceExitMs <= 0) {
-        throw new RangeError('forceExitMs must be a positive integer');
-    }
     if (registered) {
         throw new Error('Graceful shutdown is already configured (one per process)');
     }

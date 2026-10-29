@@ -68,21 +68,6 @@ describe('setupGracefulShutdown', () => {
             expect(added('SIGQUIT')).toHaveLength(0);
         });
 
-        it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
-            'refuses forceExitMs %s, registering nothing',
-            (forceExitMs) => {
-                expect(() =>
-                    setup(createMockServer(), createMockRootLogger(), [], {
-                        forceExitMs,
-                    }),
-                ).toThrow(new RangeError('forceExitMs must be a positive integer'));
-                expect(added('SIGTERM')).toHaveLength(0);
-
-                setup(createMockServer(), createMockRootLogger());
-                expect(added('SIGTERM')).toHaveLength(1);
-            },
-        );
-
         it('refuses a second call, leaving the first registration in place', async () => {
             const first = createMockServer();
             setup(first, createMockRootLogger());
