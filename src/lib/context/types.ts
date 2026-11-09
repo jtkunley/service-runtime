@@ -72,9 +72,15 @@ export interface ContextSource {
 export interface ServiceContext<Values, Destination extends string> {
   /** Resolves a context from `source` and runs `fn` inside it, returning whatever `fn` returns. */
   run<Result>(source: ContextSource, fn: () => Result): Result;
-  /** Returns one current value; throws `No request context` outside a context. */
+  /**
+   * Returns one current value; throws `No request context` outside a context.
+   * Prefer {@link getHeaders}; read values directly only when they are used locally.
+   */
   get<Name extends keyof Values>(name: Name): Values[Name];
-  /** Returns all current values, or `undefined` outside a context. */
+  /**
+   * Returns all current values, or `undefined` outside a context.
+   * Prefer {@link getHeaders}; read values directly only when they are used locally.
+   */
   getStore(): Values | undefined;
   /**
    * Returns the defined values a destination may receive, keyed by their outbound header names.

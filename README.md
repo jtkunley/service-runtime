@@ -158,9 +158,9 @@ Each context entry declares a synchronous `value(request)` resolver. The resolve
 - Listed entries must declare a `header`. Entries sent together, whether from one destination or a combined list, cannot share a header name (case-insensitive).
 - Header names are validated at configuration. An invalid value throws a `TypeError` naming the entry and header, but not the value, when headers are generated. Undeclared destinations throw `Unknown destination: <name>`.
 
-### Reading values locally
+### Reading values directly
 
-For logic inside your own service, such as scoping database queries or adding values to log lines, read resolved values by entry name. Entries don't need a `header` for this.
+Most services should not need these. Context is meant to travel through `getHeaders()`, and destinations decide what each service receives. Reach for direct reads only when a value is used inside your own service and never forwarded, such as adding it to your logger's context.
 
 | Method               | Inside a context                          | Outside a context           |
 | -------------------- | ----------------------------------------- | --------------------------- |

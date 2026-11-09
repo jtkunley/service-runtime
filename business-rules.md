@@ -22,7 +22,7 @@
 - Preserve context through asynchronous work, awaits, and timers originating inside the scoped execution.
 - Isolate concurrent executions and separately configured services. Nested executions temporarily replace current values and restore the outer context afterward.
 - Keep resolved values immutable. Changes to source headers after resolution must not alter the stored values.
-- Expose `context.get(name)` and `context.getStore()`. Outside a context, `getStore()` returns `undefined` and `get()` throws `No request context`.
+- Expose `context.get(name)` and `context.getStore()` for local use, documented as discouraged in favor of `getHeaders`. Outside a context, `getStore()` returns `undefined` and `get()` throws `No request context`.
 - Include configured optional keys with value `undefined` in the in-memory store when absent.
 - Make current values available for caller-managed logger context injection. Do not configure the supplied logger’s context automatically.
 - Provide Express-compatible middleware that establishes context before invoking downstream middleware or routes. The application is responsible for installing it.
