@@ -29,7 +29,8 @@ export type KnownAttributes<Entries> = {
 
 /**
  * Maps each destination name to the context entries it may receive. A destination named
- * `default` is used when `getHeaders()` is called without a name.
+ * `default` is used when `getHeaders()` is called without a name. When no destinations are
+ * declared, every entry with a header belongs to `default`.
  */
 export type ContextDestinations = Readonly<Record<string, readonly string[]>>;
 
@@ -38,9 +39,9 @@ export type KnownEntries<Entries, Destinations> = {
   readonly [Name in keyof Destinations]: readonly (keyof Entries & string)[];
 };
 
-/** The declared destination names; `never` when no specific destinations were declared. */
+/** The declared destination names; only `default` when no destinations were declared. */
 export type DestinationNames<Destinations> = string extends keyof Destinations
-  ? never
+  ? "default"
   : keyof Destinations & string;
 
 /** The `getHeaders` parameters: the name may be omitted only when a `default` destination exists. */

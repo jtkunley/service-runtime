@@ -49,7 +49,7 @@ export interface ServiceOptions<
   readonly onShutdownStart?: ShutdownHook | undefined;
 }
 
-export interface Service<Values = EmptyRecord, Destination extends string = never> {
+export interface Service<Values = EmptyRecord, Destination extends string = "default"> {
   readonly context: ServiceContext<Values, Destination>;
   /** Express-compatible middleware that runs downstream work inside a resolved context. */
   readonly middleware: Middleware;

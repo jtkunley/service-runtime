@@ -75,8 +75,34 @@ describe("validateDestinations", () => {
     local: { value },
   });
 
-  it("returns no destinations when omitted", () => {
-    expect(validateDestinations(undefined, entries).size).toBe(0);
+  it("puts every entry with a header in the default destination when omitted", () => {
+    const withoutAlias = entries.filter((entry) => entry.name !== "alias");
+
+    expect([...validateDestinations(undefined, withoutAlias)]).toEqual([
+      [
+        "default",
+        [
+          { entry: "tenant", header: "X-Tenant" },
+          { entry: "traceId", header: "x-trace-id" },
+        ],
+      ],
+    ]);
+  });
+
+  it("declares an empty default destination when omitted without entries", () => {
+    expect([...validateDestinations(undefined, [])]).toEqual([["default", []]]);
+  });
+
+  it("rejects conflicting headers in the implicit default destination", () => {
+    expect(() => validateDestinations(undefined, entries)).toThrow(
+      new TypeError(
+        'Destination "default" maps context entries "tenant" and "alias" to header "x-tenant"',
+      ),
+    );
+  });
+
+  it("declares no default destination when destinations are given without one", () => {
+    expect([...validateDestinations({ billing: ["tenant"] }, entries).keys()]).toEqual(["billing"]);
   });
 
   it("maps each destination to its entries' outbound headers", () => {

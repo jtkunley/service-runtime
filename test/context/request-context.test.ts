@@ -223,6 +223,14 @@ describe("context.getHeaders", () => {
     });
   });
 
+  it("forwards every entry with a header when no destinations are declared", () => {
+    const context = setup({ ...defaultContext, local: { value: () => "kept-local" } });
+
+    context.run(source("acme", "t-1"), () => {
+      expect(context.getHeaders()).toEqual({ "X-Tenant": "acme", "x-trace": "t-1" });
+    });
+  });
+
   it("throws when no name is given and no default destination is declared", () => {
     const context = setup(defaultContext, destinations);
 

@@ -1,5 +1,6 @@
 import { validateHeaderName } from "node:http";
 import type { ContextEntry } from "../context/types.js";
+import { DEFAULT_DESTINATION } from "./defaults.js";
 import type { ContextEntryConfig, OutboundHeader } from "./service-config.js";
 import { isRecord, requireRecord } from "./validators.js";
 
@@ -9,12 +10,15 @@ export function validateContextEntries(entries: unknown): readonly ContextEntryC
   return Object.freeze(Object.entries(records).map(([name, entry]) => validateEntry(name, entry)));
 }
 
+/** Without declared destinations, every entry with a header belongs to the default destination. */
 export function validateDestinations(
   destinations: unknown,
   entries: readonly ContextEntryConfig[],
 ): ReadonlyMap<string, readonly OutboundHeader[]> {
-  if (destinations === undefined) return new Map();
-  const records = requireRecord("destinations", destinations);
+  const records =
+    destinations === undefined
+      ? { [DEFAULT_DESTINATION]: entries.filter(hasHeader).map((entry) => entry.name) }
+      : requireRecord("destinations", destinations);
   const entriesByName = new Map(entries.map((entry) => [entry.name, entry]));
 
   return new Map(
@@ -23,6 +27,10 @@ export function validateDestinations(
       validateDestination(destination, entryNames, entriesByName),
     ]),
   );
+}
+
+function hasHeader(entry: ContextEntryConfig): boolean {
+  return entry.header !== undefined;
 }
 
 function validateEntry(name: string, entry: unknown): ContextEntryConfig {

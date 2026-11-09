@@ -17,7 +17,7 @@ describe("resolveServiceConfig", () => {
       port: 3000,
       host: undefined,
       context: [],
-      destinations: new Map(),
+      destinations: new Map([["default", []]]),
       probes: { readiness: "/readiness", liveness: "/liveness" },
       cleanups: [],
       keepAliveTimeoutMs: 65_000,

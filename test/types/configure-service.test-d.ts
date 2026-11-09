@@ -138,23 +138,36 @@ describe("configureService types", () => {
     expectTypeOf(service.context.getHeaders("billing")).toEqualTypeOf<Record<string, string>>();
   });
 
-  it("declares no destinations when only context is configured", () => {
+  it("offers only the default destination when destinations are omitted", () => {
     const service = configureService({
       logger,
       port: 0,
       context: { tenant: { value: () => "acme", header: "x-tenant" } },
     });
 
+    expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
+    expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
+      "default" | undefined
+    >();
+    // @ts-expect-error only the default destination exists
+    service.context.getHeaders("billing");
+  });
+
+  it("offers no destinations when an empty set is declared", () => {
+    const service = configureService({ logger, port: 0, destinations: {} });
+
     expectTypeOf(service.context.getHeaders.bind(service.context))
       .parameter(0)
       .toEqualTypeOf<never>();
   });
 
-  it("exposes an empty store and no destinations without context configuration", () => {
+  it("exposes an empty store and the default destination without context configuration", () => {
     const service = configureService({ logger, port: 0 });
 
     expectTypeOf(service).toEqualTypeOf<Service>();
-    expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<never>();
+    expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
+      "default" | undefined
+    >();
     // @ts-expect-error no context keys are configured
     service.context.get("tenant");
   });

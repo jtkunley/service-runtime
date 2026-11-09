@@ -9,7 +9,7 @@
 - Require an integer port from 0 through 65535; reject other values with `RangeError`. Port `0` selects an available port.
 - Require `forceExitMs`, when supplied, to be an integer from 1 through 2,147,483,647 milliseconds. Require `keepAliveTimeoutMs` to be an integer from 1 through 2,147,482,647, leaving room for its derived headers timeout. Reject values outside these ranges with `RangeError`.
 - If obtaining a required child logger throws, fail configuration or startup at that boundary. Do not begin accepting traffic without the required loggers.
-- With no context or destinations configured, impose no context requirements, expose an empty store inside scoped work, and declare no outbound destinations.
+- With no context or destinations configured, impose no context requirements, expose an empty store inside scoped work, and declare only an empty `default` destination.
 - Let each context entry declare a synchronous `value(request): string | undefined`, optional `required`, and optional outbound `header` name.
 - Infer configured context keys in public types. Type entries declared with `required: true` as `string`, other entries as `string | undefined`, and reject unknown context keys or entry attributes at compile time.
 - Supply resolvers with lower-cased header names, optional method, and optional path. Join array-valued headers using `, `.
@@ -34,7 +34,8 @@
 - Distinguish resolver exceptions from missing values. Let unexpected resolver failures reach framework error handling without invoking downstream application work.
 - A logger exception must not prevent the middleware from returning its required missing-context response.
 - Let callers declare named destinations, each listing the context entries it may receive. Restrict destination and entry names in public types.
-- Treat a destination named `default` as the default destination, used when headers are requested without a destination name. Allow omitting the name in public types only when `default` is declared.
+- Treat a destination named `default` as the default destination, used when headers are requested without a destination name. Allow omitting the name in public types only when `default` exists.
+- When `destinations` is not declared, place every context entry that declares an outbound header name in the `default` destination, and declare no other destinations.
 - Reject configuration if a destination lists an unknown entry or one without an outbound header name.
 - Validate outbound header names using Node HTTP rules. Reject mappings assigning two distinct entries to the same case-insensitive header name within one destination.
 - Expose `context.getHeaders(destination?)` returning only that destination’s listed, currently defined values under their configured header names. An omitted destination means `default`.

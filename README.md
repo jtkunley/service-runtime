@@ -69,7 +69,7 @@ const tenant = service.context.get("tenant"); // string
 
 ### Forward context to downstream services
 
-Give entries an outbound `header` and list them in the `default` destination. `getHeaders()` then returns the headers to attach to your outgoing requests.
+Give entries an outbound `header`. `getHeaders()` then returns every one of them that has a value, ready to attach to your outgoing requests.
 
 ```ts
 const service = configureService({
@@ -78,9 +78,6 @@ const service = configureService({
   context: {
     tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
     requestId: { value: (r) => r.headers["x-request-id"], header: "x-request-id" },
-  },
-  destinations: {
-    default: ["tenant", "requestId"],
   },
 });
 
@@ -94,7 +91,7 @@ app.get("/invoices", async (_req, res) => {
 
 ### Send different headers to different services
 
-Declare more destinations when some services should receive less. Any destination other than `default` must be named when you call `getHeaders`.
+Declare `destinations` when some services should receive less. Once you do, only the listed entries are forwarded: `default` is what `getHeaders()` sends, and every other destination must be named.
 
 ```ts
 destinations: {
@@ -195,7 +192,7 @@ Add an optional `flush()` method if your logger buffers output. The runtime call
 | `port`               | required                  | Integer from 0 through 65535. `0` picks an available port.                            |
 | `host`               | Node's default            | Interface to bind.                                                                    |
 | `context`            | `{}`                      | Context entries (see [Request context](#request-context)).                            |
-| `destinations`       | `{}`                      | Named sets of context entries to forward (see [Outbound headers](#outbound-headers)). |
+| `destinations`       | every header in `default` | Named sets of context entries to forward (see [Outbound headers](#outbound-headers)). |
 | `probes`             | `/readiness`, `/liveness` | Custom probe paths, or `false` to disable a probe.                                    |
 | `cleanups`           | `[]`                      | Functions run sequentially, in order, after the server closes.                        |
 | `onShutdownStart`    | none                      | Awaited when shutdown starts, before the server stops accepting connections.          |
@@ -227,7 +224,9 @@ If required values are missing, the middleware responds with status `400` and `{
 
 Destinations list the context entries each downstream service may receive. Every listed entry must declare a `header`, and two entries in the same destination cannot share a header name.
 
-A destination named `default` is used when you call `context.getHeaders()` without a name. Other destinations must be named explicitly. If no `default` is declared, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
+A destination named `default` is used when you call `context.getHeaders()` without a name. Other destinations must be named explicitly.
+
+If you don't declare `destinations`, there is a single `default` destination containing every entry that declares a `header`, so those entries' headers must not clash. If you declare `destinations` without a `default`, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
 
 `getHeaders` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
 
