@@ -2,8 +2,7 @@
 
 A zero-dependency HTTP service runtime for Node.js. It handles the operational parts of running a service so your application code doesn't have to:
 
-- **Scoped request context.** Values resolved from each request are available anywhere in its async call chain.
-- **Outbound context headers.** Pick which context values are forwarded to each downstream service.
+- **Context propagation.** Values resolved from each request are forwarded as headers on outgoing calls, per downstream service.
 - **Health probes.** Readiness and liveness endpoints that track the shutdown state.
 - **Graceful shutdown.** Drain in-flight requests, run cleanups in order, and enforce a deadline.
 - **Fatal-error handling.** Uncaught exceptions and unhandled rejections are logged, and the process exits once.
@@ -33,16 +32,16 @@ That's a running service with `/readiness` and `/liveness` probes, graceful shut
 
 ## Examples
 
-### Forward request context to downstream services
+### Forward request context downstream
 
-Declare context entries with an outbound `header` and install the middleware. Anywhere in the request's async call chain, `getHeaders()` returns those headers, ready to attach to your outgoing requests, with no need to pass them through function arguments.
+Declare context entries with an outbound `header` and install the middleware. Anywhere in the request's async call chain, `getHeaders()` returns those headers, ready for your outgoing requests. Mark an entry `required: true` to reject requests without it with a `400`, before your routes run.
 
 ```ts
 const service = configureService({
   logger,
   port: 3000,
   context: {
-    tenant: { value: (r) => r.headers["x-tenant-id"], header: "x-tenant-id" },
+    tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
     requestId: {
       value: (r) => r.headers["x-request-id"] ?? crypto.randomUUID(),
       header: "x-request-id",
@@ -60,54 +59,27 @@ app.get("/invoices", async (_req, res) => {
 });
 ```
 
-### Require a value
+### Choose what each service receives
 
-Mark an entry `required: true` to reject requests that don't provide it. They get a `400` response, and your routes never run, so every downstream call is guaranteed to carry that header.
-
-```ts
-context: {
-  tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
-},
-```
-
-### Send different headers to different services
-
-Declare `destinations` when some services should receive less. Once you do, only the listed entries are forwarded: `default` is what `getHeaders()` sends, and any other destination is passed by name.
+Without `destinations`, every entry with a header is forwarded. Declare `destinations` to forward less: `getHeaders()` sends `default`, a name sends that destination, and an array combines several.
 
 ```ts
 destinations: {
   default: ["tenant", "requestId"],
   analytics: ["requestId"],
+  audit: ["tenant"],
 },
 ```
 
 ```ts
-await fetch("https://analytics.example.com/events", {
-  method: "POST",
-  headers: service.context.getHeaders("analytics"), // { "x-request-id": "..." }
-});
-```
-
-### Combine destinations
-
-Pass several destination names to get their headers together. Each entry appears once.
-
-```ts
-destinations: {
-  default: ["requestId"],
-  tenancy: ["tenant"],
-},
-```
-
-```ts
-await fetch("https://billing.internal/invoices", {
-  headers: service.context.getHeaders(["default", "tenancy"]), // both headers
-});
+service.context.getHeaders(); // tenant and requestId
+service.context.getHeaders("analytics"); // requestId only
+service.context.getHeaders(["analytics", "audit"]); // requestId and tenant
 ```
 
 ### Use context outside HTTP
 
-Queue consumers and scheduled jobs can establish the same context with `context.run`.
+Queue consumers and scheduled jobs establish the same context with `context.run`:
 
 ```ts
 await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () => {
@@ -115,19 +87,9 @@ await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () =
 });
 ```
 
-### Include context in your logs
+### Shut down cleanly
 
-The runtime doesn't touch your logger's context. Read the current values with `getStore()` when writing log lines.
-
-```ts
-function log(message: string) {
-  console.log(JSON.stringify({ message, ...service.context.getStore() }));
-}
-```
-
-### Close resources on shutdown
-
-`cleanups` run one at a time, in order, after in-flight requests finish. `onShutdownStart` runs first, while the server is still draining.
+`onShutdownStart` runs when a shutdown signal arrives, while requests drain. `cleanups` then run one at a time, in order. Everything else has defaults you can tune, and long-running work can check `service.isShuttingDown()` to stop early.
 
 ```ts
 const service = configureService({
@@ -135,29 +97,9 @@ const service = configureService({
   port: 3000,
   onShutdownStart: () => queue.pause(),
   cleanups: [() => queue.close(), () => database.close()],
-});
-```
-
-Long-running work can check `service.isShuttingDown()` to stop early.
-
-### Customize health probes
-
-Move a probe to another path, or turn one off with `false`.
-
-```ts
-probes: { readiness: "/ready", liveness: false },
-```
-
-### Tune shutdown and timeouts
-
-```ts
-const service = configureService({
-  logger,
-  port: 3000,
-  host: "0.0.0.0",
+  probes: { readiness: "/ready", liveness: false },
   shutdownSignals: ["SIGTERM"],
   forceExitMs: 10_000,
-  keepAliveTimeoutMs: 75_000,
 });
 ```
 
@@ -175,8 +117,6 @@ export const logger: Logger = {
   }),
 };
 ```
-
-Add an optional `flush()` method if your logger buffers output. The runtime calls it before exiting.
 
 ## Reference
 
@@ -202,33 +142,30 @@ Invalid ports and timeouts throw `RangeError`. Other invalid options throw `Type
 
 ### Request context
 
-Each context entry declares a synchronous `value(request)` resolver. The resolver receives lower-cased header names (repeated headers are joined with `", "`), the method, and the path without its query string. Returned strings are trimmed. `undefined`, empty strings, and whitespace-only strings count as absent.
+Each context entry declares a synchronous `value(request)` resolver. The resolver receives lower-cased header names (repeated headers are joined with `", "`), the method, and the path without its query string. Returned strings are trimmed. `undefined`, empty strings, and whitespace-only strings count as absent. Unknown entry attributes are compile-time errors.
 
-Types are inferred from the configuration: `required: true` entries are typed as `string`, other entries as `string | undefined`. Unknown keys and unknown entry attributes are compile-time errors.
-
-`service.middleware` is Express-compatible middleware. Install it before the routes that need context. It resolves every entry once and runs the downstream middleware and routes inside that context, including mounted routers, body parsing, and async work.
-
-If required values are missing, the middleware responds with status `400` and `{ "error": "Missing required context value: tenant" }`, and downstream code does not run. The rejection is logged through `server/context` with `{ method, path, missing }`. Headers, query strings, and resolved values are never logged. If a resolver throws, the error is passed to `next(error)` so your framework's error handling deals with it.
+`service.middleware` is Express-compatible middleware. It resolves every entry once and runs the downstream middleware and routes inside that context, including mounted routers, body parsing, and async work. If required values are missing, it responds with status `400` and `{ "error": "Missing required context value: tenant" }`, and logs the rejection through `server/context` with `{ method, path, missing }`; headers, query strings, and values are never logged. If a resolver throws, the error is passed to `next(error)`.
 
 `context.run(source, fn)` returns exactly what the callback returns, including promises. It throws before invoking the callback if required values are missing. Nested calls temporarily replace the current values and restore the outer context afterwards.
 
-| Method                      | Inside a context           | Outside a context           |
-| --------------------------- | -------------------------- | --------------------------- |
-| `context.get(name)`         | The value                  | Throws `No request context` |
-| `context.getStore()`        | All values (immutable)     | `undefined`                 |
-| `context.getHeaders(dest?)` | That destination's headers | `{}`                        |
-
 ### Outbound headers
 
-Destinations list the context entries each downstream service may receive. Every listed entry must declare a `header`, and two entries in the same destination cannot share a header name.
+`context.getHeaders(destination?)` returns a fresh object with the destination's currently defined values, keyed by header name, or `{}` outside a context. The runtime never makes network requests itself.
 
-A destination named `default` is used when you call `context.getHeaders()` without a name. Other destinations must be named explicitly.
+- Without `destinations`, a single `default` destination contains every entry that declares a `header`.
+- With `destinations`, only the listed entries are forwarded. Calling `getHeaders()` without a name requires a `default` destination; otherwise it's a type error and throws `Unknown destination: default`.
+- An array of names combines destinations, including each entry once.
+- Listed entries must declare a `header`. Entries sent together, whether from one destination or a combined list, cannot share a header name (case-insensitive).
+- Header names are validated at configuration. An invalid value throws a `TypeError` naming the entry and header, but not the value, when headers are generated. Undeclared destinations throw `Unknown destination: <name>`.
 
-If you don't declare `destinations`, there is a single `default` destination containing every entry that declares a `header`, so those entries' headers must not clash. If you declare `destinations` without a `default`, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
+### Reading values locally
 
-Pass an array of names to combine several destinations. Each entry is included once, and two destinations that send different entries under the same header name throw an error.
+For logic inside your own service, such as scoping database queries or adding values to log lines, read resolved values by entry name. Entries don't need a `header` for this.
 
-`getHeaders` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
+| Method               | Inside a context                          | Outside a context           |
+| -------------------- | ----------------------------------------- | --------------------------- |
+| `context.get(name)`  | The value (`string` for required entries) | Throws `No request context` |
+| `context.getStore()` | All values, frozen                        | `undefined`                 |
 
 ### Health probes
 
