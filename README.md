@@ -106,7 +106,7 @@ await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () =
 
 ### Shut down cleanly
 
-`onShutdownStart` runs when a shutdown signal arrives, while requests drain. `cleanups` then run one at a time, in order. Everything else has defaults you can tune, and long-running work can check `service.isShuttingDown()` to stop early.
+`onShutdownStart` runs when a shutdown signal arrives, while requests drain. `cleanups` then run one at a time, in order. Long-running work can check `service.isShuttingDown()` to stop early.
 
 ```ts
 const service = configureService({
@@ -114,10 +114,15 @@ const service = configureService({
   port: 3000,
   onShutdownStart: () => queue.pause(),
   cleanups: [() => queue.close(), () => database.close()],
-  probes: { readiness: "/ready", liveness: false },
-  shutdownSignals: ["SIGTERM"],
-  forceExitMs: 10_000,
 });
+```
+
+Shutdown starts on `SIGTERM` or `SIGINT` and must finish within 30 seconds. Probes live at `/readiness` and `/liveness`. Override any of these when you need to:
+
+```ts
+probes: { readiness: "/ready", liveness: false },
+shutdownSignals: ["SIGTERM"], // replaces the default list
+forceExitMs: 10_000,
 ```
 
 ### Bring your own logger

@@ -1,7 +1,7 @@
 {
   "name": "service-runtime",
   "version": "1.0.1",
-  "description": "Zero-dependency HTTP service runtime for Node.js: scoped request context, outbound context headers, health probes, graceful shutdown, and fatal-error handling.",
+  "description": "Zero-dependency HTTP service runtime for Node.js: request context propagated through a native fetch, health probes, graceful shutdown, and fatal-error handling.",
   "keywords": [
     "http",
     "service",
@@ -12,6 +12,9 @@
     "liveness",
     "async-local-storage",
     "request-context",
+    "context-propagation",
+    "fetch",
+    "headers",
     "express",
     "middleware"
   ],
