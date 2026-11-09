@@ -13,19 +13,19 @@ A zero-dependency HTTP service runtime for Node.js. It handles the operational p
 - **Fatal-error handling.** Uncaught exceptions and unhandled rejections are logged, and the process exits once.
 
 ```sh
-npm install @jtkunley/service-runtime @jtkunley/logger
+npm install @jtkunley/service-runtime
 ```
 
-[`@jtkunley/logger`](https://www.npmjs.com/package/@jtkunley/logger) is the recommended logger, but any compatible logger works (see [Bring your own logger](#bring-your-own-logger)). Requires Node.js 22.12 or later, and TypeScript 5.4 or later if you use the types. The package is ESM, and `require()` also works on supported Node versions.
+Requires Node.js 22.12 or later, and TypeScript 5.4 or later if you use the types. The package is ESM, and `require()` also works on supported Node versions.
 
 ## Quick start
 
 ```ts
 import express from "express";
-import { logger } from "@jtkunley/logger";
 import { configureService } from "@jtkunley/service-runtime";
+import { logger } from "./logger.js"; // see "Bring your own logger"
 
-const service = configureService({ logger: logger.init("orders"), port: 3000 });
+const service = configureService({ logger, port: 3000 });
 
 const app = express();
 app.get("/", (_req, res) => res.send("ok"));
@@ -132,13 +132,7 @@ forceExitMs: 10_000,
 
 ### Bring your own logger
 
-A root logger from `@jtkunley/logger` plugs in directly, and its `flush()` runs before the process exits. To add a context value to every log line, resolve it per entry:
-
-```ts
-logger.configureContext({ requestId: () => service.context.getStore()?.requestId });
-```
-
-Any other logger with a `child(module, action)` method works too. This one writes to the console:
+Any logger with a `child(module, action)` method works. This one writes to the console:
 
 ```ts
 import type { Logger } from "@jtkunley/service-runtime";
