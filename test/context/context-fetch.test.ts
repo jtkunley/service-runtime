@@ -80,4 +80,19 @@ describe("createContextFetch", () => {
 
     expect(sentHeaders(fetchMock)).toEqual({ "x-tenant": "second" });
   });
+
+  it("rejects instead of throwing when headers are invalid", async () => {
+    stubFetch();
+    const failing = createContextFetch(() => {
+      throw new TypeError("invalid context value");
+    });
+
+    const result = failing("https://example.test");
+
+    expect(result).toBeInstanceOf(Promise);
+    await expect(result).rejects.toThrow(new TypeError("invalid context value"));
+    await expect(
+      contextFetch("https://example.test", { headers: { "bad name": "x" } }),
+    ).rejects.toThrow(TypeError);
+  });
 });

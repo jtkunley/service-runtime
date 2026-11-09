@@ -29,7 +29,7 @@ export interface ProbeOptions {
 
 export interface ServiceOptions<
   Entries extends ContextEntries = EmptyRecord,
-  Destinations extends ContextDestinations = EmptyRecord,
+  Destinations extends ContextDestinations = ContextDestinations,
 > {
   readonly logger: Logger;
   /** An integer from 0 through 65535; `0` selects an available port. */

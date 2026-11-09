@@ -1,7 +1,12 @@
 import express from "express";
 import type { AddressInfo } from "node:net";
 import { describe, expectTypeOf, it } from "vitest";
-import { configureService, type Logger, type Service } from "../../src/index.js";
+import {
+  configureService,
+  type Logger,
+  type Service,
+  type ServiceOptions,
+} from "../../src/index.js";
 
 declare const logger: Logger;
 
@@ -164,6 +169,14 @@ describe("configureService types", () => {
     >();
     // @ts-expect-error only the default destination exists
     service.context.getHeaders("billing");
+  });
+
+  it("offers the default destination for options typed as ServiceOptions", () => {
+    const options: ServiceOptions = { logger, port: 0 };
+    const service = configureService(options);
+
+    expectTypeOf(service.createFetch()).toEqualTypeOf<typeof fetch>();
+    expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
   });
 
   it("offers no destinations when an empty set is declared", () => {

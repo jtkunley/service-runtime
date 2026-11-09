@@ -11,7 +11,7 @@ A zero-dependency HTTP service runtime for Node.js. It handles the operational p
 npm install service-runtime
 ```
 
-Requires Node.js 22.12 or later. The package is ESM, and `require()` also works on supported Node versions.
+Requires Node.js 22.12 or later, and TypeScript 5.4 or later if you use the types. The package is ESM, and `require()` also works on supported Node versions.
 
 ## Quick start
 
@@ -185,7 +185,7 @@ Each context entry declares a synchronous `value(request)` resolver. The resolve
 
 ### Outbound headers
 
-`service.createFetch(destination?)` returns Node's global `fetch`, wrapped so each call sends the current context's headers for the destination. Headers passed to a call take precedence over context headers of the same name, and calls outside a context send no context headers. The destination is checked when the fetch is created.
+`service.createFetch(destination?)` returns Node's global `fetch`, wrapped so each call sends the current context's headers for the destination. Headers passed to a call take precedence over context headers of the same name; with a `Request` input, its own headers count as passed unless the call also supplies `headers`. Calls outside a context send no context headers. Like `fetch`, every failure, including an invalid header, rejects the returned promise. The destination is checked when the fetch is created.
 
 `context.getHeaders(destination?)` returns a fresh object with the destination's currently defined values, keyed by header name, or `{}` outside a context.
 
@@ -194,7 +194,8 @@ Both take the same destination argument:
 - Without `destinations`, a single `default` destination contains every entry that declares a `header`.
 - With `destinations`, only the listed entries are forwarded. Omitting the name requires a `default` destination; otherwise it's a type error and throws `Unknown destination: default`.
 - An array of names combines destinations, including each entry once.
-- Listed entries must declare a `header`. Entries sent together, whether from one destination or a combined list, cannot share a header name (case-insensitive).
+- Listed entries must declare a `header`, and two entries in one destination cannot share a header name (case-insensitive). Both are checked at configuration. A clash between combined destinations throws when `createFetch` is called, or when `getHeaders` is called with that list.
+- Declare `destinations` inline, or with `as const` when it lives in a separate variable, so entry names keep their literal types.
 - Header names are validated at configuration. An invalid value throws a `TypeError` naming the entry and header, but not the value, when headers are generated. Undeclared destinations throw `Unknown destination: <name>`.
 
 ### Reading values directly
