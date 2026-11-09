@@ -33,65 +33,46 @@ That's a running service with `/readiness` and `/liveness` probes, graceful shut
 
 ## Examples
 
-### Read values from each request
+### Forward request context to downstream services
 
-Declare context entries, install the middleware, and read the values anywhere in the request's async call chain, with no need to pass them through function arguments.
+Declare context entries with an outbound `header` and install the middleware. Anywhere in the request's async call chain, `getHeaders()` returns those headers, ready to attach to your outgoing requests, with no need to pass them through function arguments.
 
 ```ts
 const service = configureService({
   logger,
   port: 3000,
   context: {
-    requestId: { value: (request) => request.headers["x-request-id"] ?? crypto.randomUUID() },
+    tenant: { value: (r) => r.headers["x-tenant-id"], header: "x-tenant-id" },
+    requestId: {
+      value: (r) => r.headers["x-request-id"] ?? crypto.randomUUID(),
+      header: "x-request-id",
+    },
   },
 });
 
 app.use(service.middleware);
 
-app.get("/", (_req, res) => {
-  res.send(service.context.get("requestId"));
-});
-```
-
-### Require a value
-
-Mark an entry `required: true` to reject requests that don't provide it. They get a `400` response, and your routes never run. Required entries are typed as `string` instead of `string | undefined`.
-
-```ts
-context: {
-  tenant: { value: (request) => request.headers["x-tenant-id"], required: true },
-},
-```
-
-```ts
-const tenant = service.context.get("tenant"); // string
-```
-
-### Forward context to downstream services
-
-Give entries an outbound `header`. `getHeaders()` then returns every one of them that has a value, ready to attach to your outgoing requests.
-
-```ts
-const service = configureService({
-  logger,
-  port: 3000,
-  context: {
-    tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
-    requestId: { value: (r) => r.headers["x-request-id"], header: "x-request-id" },
-  },
-});
-
 app.get("/invoices", async (_req, res) => {
   const response = await fetch("https://billing.internal/invoices", {
-    headers: service.context.getHeaders(),
+    headers: service.context.getHeaders(), // { "x-tenant-id": "...", "x-request-id": "..." }
   });
   res.json(await response.json());
 });
 ```
 
+### Require a value
+
+Mark an entry `required: true` to reject requests that don't provide it. They get a `400` response, and your routes never run, so every downstream call is guaranteed to carry that header.
+
+```ts
+context: {
+  tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
+},
+```
+
 ### Send different headers to different services
 
-Declare `destinations` when some services should receive less. Once you do, only the listed entries are forwarded: `default` is what `getHeaders()` sends, and every other destination must be named.
+Declare `destinations` when some services should receive less. Once you do, only the listed entries are forwarded: `default` is what `getHeaders()` sends, and any other destination is passed by name.
 
 ```ts
 destinations: {
@@ -107,13 +88,30 @@ await fetch("https://analytics.example.com/events", {
 });
 ```
 
+### Combine destinations
+
+Pass several destination names to get their headers together. Each entry appears once.
+
+```ts
+destinations: {
+  default: ["requestId"],
+  tenancy: ["tenant"],
+},
+```
+
+```ts
+await fetch("https://billing.internal/invoices", {
+  headers: service.context.getHeaders(["default", "tenancy"]), // both headers
+});
+```
+
 ### Use context outside HTTP
 
 Queue consumers and scheduled jobs can establish the same context with `context.run`.
 
 ```ts
 await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () => {
-  await processJob(job); // context.get("tenant") and getHeaders() work in here
+  await fetch(job.callbackUrl, { headers: service.context.getHeaders() });
 });
 ```
 
@@ -227,6 +225,8 @@ Destinations list the context entries each downstream service may receive. Every
 A destination named `default` is used when you call `context.getHeaders()` without a name. Other destinations must be named explicitly.
 
 If you don't declare `destinations`, there is a single `default` destination containing every entry that declares a `header`, so those entries' headers must not clash. If you declare `destinations` without a `default`, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
+
+Pass an array of names to combine several destinations. Each entry is included once, and two destinations that send different entries under the same header name throw an error.
 
 `getHeaders` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
 

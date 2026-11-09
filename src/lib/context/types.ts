@@ -44,10 +44,13 @@ export type DestinationNames<Destinations> = string extends keyof Destinations
   ? "default"
   : keyof Destinations & string;
 
-/** The `getHeaders` parameters: the name may be omitted only when a `default` destination exists. */
+/**
+ * The `getHeaders` parameters: one destination name or several. The name may be omitted only
+ * when a `default` destination exists.
+ */
 export type GetHeadersArgs<Destination extends string> = "default" extends Destination
-  ? [destination?: Destination]
-  : [destination: Destination];
+  ? [destination?: Destination | readonly Destination[]]
+  : [destination: Destination | readonly Destination[]];
 
 /** The resolved values: required entries are strings, the rest may be `undefined`. */
 export type ContextValues<Entries> = {
@@ -75,7 +78,8 @@ export interface ServiceContext<Values, Destination extends string> {
   getStore(): Values | undefined;
   /**
    * Returns the defined values a destination may receive, keyed by their outbound header names.
-   * Without a name, uses the destination named `default`.
+   * Given several names, combines their headers. Without a name, uses the destination named
+   * `default`.
    */
   getHeaders(...destination: GetHeadersArgs<Destination>): Record<string, string>;
 }

@@ -45,14 +45,45 @@ export function createRequestContext(
       return storage.getStore();
     },
 
-    getHeaders(destination: string = DEFAULT_DESTINATION): Record<string, string> {
-      const mappings = destinations.get(destination);
-      if (mappings === undefined) throw new Error(`Unknown destination: ${destination}`);
-      return buildOutboundHeaders(mappings, storage.getStore());
+    getHeaders(
+      destination: string | readonly string[] = DEFAULT_DESTINATION,
+    ): Record<string, string> {
+      const names = typeof destination === "string" ? [destination] : destination;
+      return buildOutboundHeaders(combineDestinations(destinations, names), storage.getStore());
     },
   });
 
   return { context, resolve, enter };
+}
+
+/**
+ * Combines the mappings of several destinations, keeping the first mapping of each entry.
+ * Throws if two destinations send different entries under the same header.
+ */
+function combineDestinations(
+  destinations: ReadonlyMap<string, readonly OutboundHeader[]>,
+  names: readonly string[],
+): readonly OutboundHeader[] {
+  const combined = new Map<string, OutboundHeader & { readonly destination: string }>();
+
+  for (const name of names) {
+    const mappings = destinations.get(name);
+    if (mappings === undefined) throw new Error(`Unknown destination: ${name}`);
+
+    for (const mapping of mappings) {
+      const headerKey = mapping.header.toLowerCase();
+      const existing = combined.get(headerKey);
+      if (existing === undefined) {
+        combined.set(headerKey, { ...mapping, destination: name });
+      } else if (existing.entry !== mapping.entry) {
+        throw new Error(
+          `Destinations "${existing.destination}" and "${name}" map context entries "${existing.entry}" and "${mapping.entry}" to header "${mapping.header}"`,
+        );
+      }
+    }
+  }
+
+  return [...combined.values()];
 }
 
 function assertContextSource(source: unknown): asserts source is ContextSource {

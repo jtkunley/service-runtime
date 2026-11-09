@@ -66,12 +66,12 @@ describe("configureService types", () => {
 
     expectTypeOf(contextFirst.context.get("tenant")).toEqualTypeOf<string | undefined>();
     expectTypeOf<Parameters<typeof contextFirst.context.getHeaders>[0]>().toEqualTypeOf<
-      "default" | "billing" | undefined
+      "default" | "billing" | readonly ("default" | "billing")[] | undefined
     >();
     expectTypeOf(destinationsFirst.context.get("tenant")).toEqualTypeOf<string | undefined>();
-    expectTypeOf<
-      Parameters<typeof destinationsFirst.context.getHeaders>[0]
-    >().toEqualTypeOf<"billing">();
+    expectTypeOf<Parameters<typeof destinationsFirst.context.getHeaders>[0]>().toEqualTypeOf<
+      "billing" | readonly "billing"[]
+    >();
   });
 
   it("rejects unknown context keys", () => {
@@ -108,12 +108,17 @@ describe("configureService types", () => {
     });
 
     expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
-      "billing" | "audit"
+      "billing" | "audit" | readonly ("billing" | "audit")[]
     >();
     expectTypeOf(service.context.getHeaders("billing")).toEqualTypeOf<Record<string, string>>();
+    expectTypeOf(service.context.getHeaders(["billing", "audit"])).toEqualTypeOf<
+      Record<string, string>
+    >();
 
     // @ts-expect-error unknown destination
     service.context.getHeaders("payments");
+    // @ts-expect-error unknown destination in a list
+    service.context.getHeaders(["billing", "payments"]);
     // @ts-expect-error a name is required without a default destination
     service.context.getHeaders();
 
@@ -147,7 +152,7 @@ describe("configureService types", () => {
 
     expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
     expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
-      "default" | undefined
+      "default" | readonly "default"[] | undefined
     >();
     // @ts-expect-error only the default destination exists
     service.context.getHeaders("billing");
@@ -156,9 +161,10 @@ describe("configureService types", () => {
   it("offers no destinations when an empty set is declared", () => {
     const service = configureService({ logger, port: 0, destinations: {} });
 
-    expectTypeOf(service.context.getHeaders.bind(service.context))
-      .parameter(0)
-      .toEqualTypeOf<never>();
+    // @ts-expect-error no default destination exists
+    service.context.getHeaders();
+    // @ts-expect-error no destinations exist
+    service.context.getHeaders("default");
   });
 
   it("exposes an empty store and the default destination without context configuration", () => {
@@ -166,7 +172,7 @@ describe("configureService types", () => {
 
     expectTypeOf(service).toEqualTypeOf<Service>();
     expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
-      "default" | undefined
+      "default" | readonly "default"[] | undefined
     >();
     // @ts-expect-error no context keys are configured
     service.context.get("tenant");

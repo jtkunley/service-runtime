@@ -223,6 +223,40 @@ describe("context.getHeaders", () => {
     });
   });
 
+  it("combines the headers of several destinations", () => {
+    const context = setup(defaultContext, { tenantOnly: ["tenant"], audit: ["traceId"] });
+
+    context.run(source("acme", "t-1"), () => {
+      expect(context.getHeaders(["tenantOnly", "audit"])).toEqual({
+        "X-Tenant": "acme",
+        "x-trace": "t-1",
+      });
+      expect(context.getHeaders(["tenantOnly", "tenantOnly"])).toEqual({ "X-Tenant": "acme" });
+      expect(context.getHeaders([])).toEqual({});
+    });
+  });
+
+  it("throws if any destination in a list is undeclared", () => {
+    const context = setup(defaultContext, destinations);
+
+    expect(() => context.getHeaders(["billing", "payments"])).toThrow(
+      new Error("Unknown destination: payments"),
+    );
+  });
+
+  it("throws if combined destinations send different entries under one header", () => {
+    const context = setup(
+      { ...defaultContext, alias: { value: () => "other", header: "x-tenant" } },
+      { billing: ["tenant"], partner: ["alias"] },
+    );
+
+    expect(() => context.getHeaders(["billing", "partner"])).toThrow(
+      new Error(
+        'Destinations "billing" and "partner" map context entries "tenant" and "alias" to header "x-tenant"',
+      ),
+    );
+  });
+
   it("forwards every entry with a header when no destinations are declared", () => {
     const context = setup({ ...defaultContext, local: { value: () => "kept-local" } });
 

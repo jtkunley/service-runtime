@@ -38,7 +38,7 @@
 - When `destinations` is not declared, place every context entry that declares an outbound header name in the `default` destination, and declare no other destinations.
 - Reject configuration if a destination lists an unknown entry or one without an outbound header name.
 - Validate outbound header names using Node HTTP rules. Reject mappings assigning two distinct entries to the same case-insensitive header name within one destination.
-- Expose `context.getHeaders(destination?)` returning only that destination’s listed, currently defined values under their configured header names. An omitted destination means `default`.
+- Expose `context.getHeaders(destination?)` returning only that destination’s listed, currently defined values under their configured header names. An omitted destination means `default`. Accept an array of destination names and combine their headers, including each entry once; throw if two of them send different entries under the same case-insensitive header name.
 - Validate outbound values using Node HTTP rules. If a value is invalid, throw `TypeError` identifying the entry and header without including the raw value; do not return a partial result.
 - Return an empty header object for a declared destination with no applicable values or when called outside context. Throw `Unknown destination: <name>` for an undeclared destination.
 - Return a fresh header object on each call, preserving valid names as ordinary own properties. Mutating it must not change context or subsequent results.
