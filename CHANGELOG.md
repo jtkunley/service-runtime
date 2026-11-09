@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows [S
 
 ## 1.1.0
 
-First release published to npm.
+First release published to npm, as `@jtkunley/service-runtime`.
 
 ### Added
 

@@ -1,5 +1,5 @@
 {
-  "name": "service-runtime",
+  "name": "@jtkunley/service-runtime",
   "version": "1.1.0",
   "description": "Zero-dependency HTTP service runtime for Node.js: request context propagated through a native fetch, health probes, graceful shutdown, and fatal-error handling.",
   "keywords": [
@@ -19,7 +19,7 @@
     "middleware"
   ],
   "license": "MIT",
-  "author": "jtkunley <jtkunley@gmail.com>",
+  "author": "jtkunley (https://github.com/jtkunley)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jtkunley/service-runtime.git"
@@ -43,7 +43,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "src"
+    "src",
+    "CHANGELOG.md"
   ],
   "sideEffects": false,
   "engines": {
