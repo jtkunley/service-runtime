@@ -2,7 +2,7 @@
 
 A zero-dependency HTTP service runtime for Node.js. It handles the operational parts of running a service so your application code doesn't have to:
 
-- **Context propagation.** Values resolved from each request are forwarded as headers on outgoing calls, per downstream service.
+- **Context propagation.** Values resolved from each request travel as headers on outgoing calls, through a native `fetch` that adds them for you. You choose which values each downstream service receives.
 - **Health probes.** Readiness and liveness endpoints that track the shutdown state.
 - **Graceful shutdown.** Drain in-flight requests, run cleanups in order, and enforce a deadline.
 - **Fatal-error handling.** Uncaught exceptions and unhandled rejections are logged, and the process exits once.
@@ -60,6 +60,12 @@ app.get("/invoices", async (_req, res) => {
 });
 ```
 
+Create the fetch once and reuse it: each call picks up the headers of the request it runs in. Headers you pass to a call win over context headers of the same name:
+
+```ts
+await contextFetch(url, { headers: { "x-request-id": "replay-42" } });
+```
+
 ### Choose what each service receives
 
 Without `destinations`, every entry with a header is forwarded. Declare `destinations` to forward less, and create one fetch per destination: no name sends `default`, a name sends that destination, and an array combines several.
@@ -75,7 +81,7 @@ destinations: {
 ```ts
 const billingFetch = service.createFetch(); // tenant and requestId
 const analyticsFetch = service.createFetch("analytics"); // requestId only
-const auditFetch = service.createFetch(["analytics", "audit"]); // requestId and tenant
+const reportingFetch = service.createFetch(["analytics", "audit"]); // requestId and tenant
 ```
 
 ### Use another HTTP client
@@ -130,6 +136,19 @@ export const logger: Logger = {
 ```
 
 ## Reference
+
+### API
+
+| Member                              | Description                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `configureService(options)`         | Validates options and returns a service (see [Configuration](#configuration)).               |
+| `service.middleware`                | Express-compatible middleware that resolves the request's context.                           |
+| `service.createFetch(destination?)` | Node's `fetch`, sending the destination's context headers on every call.                     |
+| `service.context.getHeaders(dest?)` | The destination's context headers as a plain object, for other HTTP clients.                 |
+| `service.context.run(source, fn)`   | Runs `fn` inside a context resolved from `source`, for work outside HTTP.                    |
+| `service.listen(app)`               | Starts the HTTP server, probes, and signal handling; resolves with the address.              |
+| `service.isShuttingDown()`          | `true` once shutdown or a fatal exit has begun.                                              |
+| `service.context.get` / `getStore`  | Direct value reads; rarely needed (see [Reading values directly](#reading-values-directly)). |
 
 ### Configuration
 
