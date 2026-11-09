@@ -1,0 +1,62 @@
+{
+  "name": "service-runtime",
+  "version": "1.0.0",
+  "description": "Zero-dependency HTTP service runtime for Node.js: scoped request context, outbound context headers, health probes, graceful shutdown, and fatal-error handling.",
+  "keywords": [
+    "http",
+    "service",
+    "runtime",
+    "graceful-shutdown",
+    "health-check",
+    "readiness",
+    "liveness",
+    "async-local-storage",
+    "request-context",
+    "express",
+    "middleware"
+  ],
+  "license": "MIT",
+  "author": "jtkunley <jtkunley@gmail.com>",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "lib"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test:coverage",
+    "prepublishOnly": "npm run check && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.19.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
+    "express": "^5.3.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
+  }
+}

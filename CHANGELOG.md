@@ -1,0 +1,14 @@
+# Changelog
+
+All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
+
+## 1.0.0
+
+Initial release.
+
+- `configureService(options)` with synchronous validation and configuration snapshots.
+- Scoped request context with typed entries, Express-compatible middleware, and `context.run`.
+- Per-destination outbound context headers with Node HTTP header validation.
+- Readiness and liveness probes.
+- Graceful shutdown with `onShutdownStart`, connection draining, ordered cleanups, and a deadline.
+- Fatal-error handling and a single coordinated process exit with a best-effort logger flush.

@@ -1,0 +1,8 @@
+---
+description: CodeGraph is enabled for this repo (index in .codegraph/, MCP server in .cursor/mcp.json). Use its symbol search and impact tools when tracing code.
+alwaysApply: false
+---
+
+# CodeGraph
+
+CodeGraph indexes this repository. Prefer its MCP tools for symbol lookup, references, and change-impact questions. Do not re-run `codegraph init` every session.

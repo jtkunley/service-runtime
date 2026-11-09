@@ -1,0 +1,86 @@
+- Provide HTTP service startup, scoped execution context, outbound context-header selection, health probes, graceful shutdown, and fatal-error handling without third-party runtime dependencies.
+- Expose `configureService(options)` as the sole runtime entry point. Export public service, context, middleware, cleanup, and logger types without exposing internal lifecycle helpers.
+- Require a caller-supplied `logger` and `port`. Accept optional `host`, `context`, `destinations`, `probes`, `cleanups`, `keepAliveTimeoutMs`, `shutdownSignals`, `forceExitMs`, and `onShutdownStart`.
+- Accept a root logger exposing `child(module, action)` and optional `flush(): Promise<void>`. Children must support `info(message, data)` and `error(message, error: Error, data)`.
+- Return a service exposing `context`, `middleware`, `isShuttingDown(): boolean`, and `listen(app): Promise<AddressInfo>`.
+- Configuration must not open sockets or register process signal or fatal-error handlers. Allow multiple independently configured services before listening.
+- Fix configuration at creation. Later changes to the original options or configuration collections must not reconfigure the service; callbacks may still read changing application state.
+- Reject invalid configuration synchronously, before installing process handlers or opening sockets.
+- Require an integer port from 0 through 65535; reject other values with `RangeError`. Port `0` selects an available port.
+- Require `forceExitMs`, when supplied, to be an integer from 1 through 2,147,483,647 milliseconds. Require `keepAliveTimeoutMs` to be an integer from 1 through 2,147,482,647, leaving room for its derived headers timeout. Reject values outside these ranges with `RangeError`.
+- If obtaining a required child logger throws, fail configuration or startup at that boundary. Do not begin accepting traffic without the required loggers.
+- With no context or destinations configured, impose no context requirements, expose an empty store inside scoped work, and declare no outbound destinations.
+- Let each context entry declare a synchronous `value(request): string | undefined`, optional `required`, and optional outbound `header` name.
+- Infer configured context keys in public types. Type entries declared with `required: true` as `string`, other entries as `string | undefined`, and reject unknown context keys or entry attributes at compile time.
+- Supply resolvers with lower-cased header names, optional method, and optional path. Join array-valued headers using `, `.
+- Resolve each entry once when establishing a context. Trim returned strings and treat `undefined`, empty strings, and whitespace-only strings as absent. Do not await asynchronous resolvers.
+- Let caller-provided resolvers derive defaults, generate identifiers, or ignore incoming values. Do not impose built-in tenant names, identifier generation, environment variables, or fallback policies.
+- Report all missing required entries in configuration order. Use `Missing required context value: <name>` for one and `Missing required context values: <names>` for several, separating names with `, `.
+- Expose `context.run(source, fn)` for HTTP-independent work. Require source headers and accept optional method and path.
+- If required values are missing, `context.run` must throw before invoking `fn`. If a resolver throws, propagate that failure without invoking `fn` or entering a partial context.
+- Return exactly what `fn` returns, including a promise. Preserve callback throws and rejected promises.
+- Preserve context through asynchronous work, awaits, and timers originating inside the scoped execution.
+- Isolate concurrent executions and separately configured services. Nested executions temporarily replace current values and restore the outer context afterward.
+- Keep resolved values immutable. Changes to source headers after resolution must not alter the stored values.
+- Expose `context.get(name)` and `context.getStore()`. Outside a context, `getStore()` returns `undefined` and `get()` throws `No request context`.
+- Include configured optional keys with value `undefined` in the in-memory store when absent.
+- Make current values available for caller-managed logger context injection. Do not configure the supplied logger’s context automatically.
+- Provide Express-compatible middleware that establishes context before invoking downstream middleware or routes. The application is responsible for installing it.
+- Preserve context through mounted routers, body parsing, and asynchronous route work when the middleware precedes that work.
+- Supply HTTP resolvers with the full original path, including mount prefixes, with its query string removed. Programmatic `context.run` receives the path supplied by its caller.
+- For missing required HTTP context, return status 400 with JSON `{ error: "<missing-values message>" }` and do not invoke downstream application work.
+- Log missing-context rejections through `server/context`, passing the missing-values message, an `Error` with that message, and `{ method, path, missing }`.
+- Exclude raw headers, query strings, and resolved values from the runtime’s rejection-log data. Emit no rejection log for valid context.
+- Distinguish resolver exceptions from missing values. Let unexpected resolver failures reach framework error handling without invoking downstream application work.
+- A logger exception must not prevent the middleware from returning its required missing-context response.
+- Let callers declare named destinations, each listing the context entries it may receive. Restrict destination and entry names in public types.
+- Reject configuration if a destination lists an unknown entry or one without an outbound header name.
+- Validate outbound header names using Node HTTP rules. Reject mappings assigning two distinct entries to the same case-insensitive header name within one destination.
+- Expose `context.getHeaders(destination)` returning only that destination’s listed, currently defined values under their configured header names.
+- Validate outbound values using Node HTTP rules. If a value is invalid, throw `TypeError` identifying the entry and header without including the raw value; do not return a partial result.
+- Return an empty header object for a declared destination with no applicable values or when called outside context. Throw `Unknown destination: <name>` for an undeclared destination.
+- Return a fresh header object on each call, preserving valid names as ordinary own properties. Mutating it must not change context or subsequent results.
+- Generate headers without making network requests. Callers apply returned headers to their own outgoing requests.
+- `listen(app)` starts an owned Node HTTP server using the supplied request listener. An omitted host uses Node’s default binding behavior.
+- Resolve `listen()` with the actual bound address only after successful binding. Reject startup and binding failures, including an occupied port.
+- Permit only one active or pending listening lifecycle per process. Reject repeated or competing attempts with `Only one service can listen per process`.
+- If startup fails, close resources opened by that attempt and remove only the process handlers it installed before rejecting. Release the listening reservation so a later attempt can retry.
+- Failed startup must not invoke application shutdown cleanups or terminate the process merely because startup failed. After successful startup, no second listening lifecycle is supported.
+- Install fatal-error and configured shutdown-signal handling before accepting application traffic. Preserve unrelated application process handlers.
+- Default keep-alive timeout to 65,000 milliseconds. Set headers timeout 1,000 milliseconds higher and request timeout at least as high as headers timeout.
+- Default readiness to `/readiness` and liveness to `/liveness`. Accept custom paths and `false` to disable either probe; `undefined` retains its default.
+- Require enabled probe paths to be non-empty absolute paths without query strings or fragments. Reject identical readiness and liveness paths.
+- Answer probe `GET` and `HEAD` requests before invoking the application or context middleware. Ignore query strings when matching and return empty response bodies.
+- Return readiness 200 while serving normally and 503 once graceful shutdown or fatal exit begins. Return liveness 200 while the server remains reachable, including during draining.
+- Pass other methods, disabled probe paths, and unrelated paths to the application.
+- `isShuttingDown()` starts as `false`, becomes `true` when graceful shutdown or fatal exit begins, and never returns to `false`.
+- Default shutdown signals to `SIGTERM` and `SIGINT`. Accept a non-empty custom list, register duplicates once, and reject unknown or uncatchable signals such as `SIGKILL` and `SIGSTOP`.
+- Start graceful shutdown once. Repeated configured signals must not restart cleanup, shorten the configured deadline, or trigger default signal termination.
+- On shutdown, immediately fail readiness, invoke and await optional `onShutdownStart`, then stop accepting new connections and wait for active HTTP requests to finish.
+- While `onShutdownStart` is pending, keep the server available with readiness failing and liveness succeeding.
+- Preserve context for requests finishing during shutdown.
+- Close idle keep-alive connections promptly during draining, including connections becoming idle after shutdown starts. Under a responsive event loop, close them within two seconds of becoming idle.
+- After server closure, invoke cleanup functions sequentially in declaration order, awaiting synchronous or asynchronous completion.
+- Invoke cleanups only during shutdown, allowing them to close resources created after service configuration.
+- If `onShutdownStart`, server closure, or a cleanup fails, record the failure, continue subsequent shutdown steps where possible, and select exit code 1.
+- Identify failing cleanups by function name or, when unnamed, one-based position such as `#1`.
+- Select exit code 0 after successful graceful shutdown and 1 after any shutdown failure. Later success must not erase an earlier failure.
+- Default the graceful-shutdown deadline to 30,000 milliseconds from the first shutdown signal. Include the initial hook, HTTP draining, and cleanup within that budget.
+- On deadline expiry, report the timeout and select forced exit code 1 without waiting for unfinished work. Allow at most the final logger-flush interval before exit.
+- Cancel the graceful deadline when the normal sequence finishes. Timer deadlines remain subject to event-loop availability and cannot interrupt synchronous blocking work.
+- Use `server/shutdown` for shutdown logs and include the triggering `{ signal }`.
+- Log `Received shutdown signal, closing server...` at shutdown start, `Shutdown already in progress, ignoring signal` for subsequent signals, and `Graceful shutdown complete` when the normal sequence finishes.
+- Report failures with `Error in onShutdownStart`, `Error closing server`, or `Error during resource cleanup`, adding the cleanup identifier when applicable.
+- Report deadline expiry with `Graceful shutdown timed out, forcing exit` and an `Error` describing the timeout.
+- Once startup succeeds, exceptions while emitting shutdown logs must not prevent closure, remaining cleanups, deadline enforcement, or exit. Treat shutdown logging failure as an unsuccessful shutdown.
+- Handle process-level uncaught exceptions and unhandled promise rejections through `server/fatal`.
+- Log them as `Uncaught exception, exiting` or `Unhandled promise rejection, exiting`, passing the failure as an `Error` and empty runtime metadata.
+- Fatal handling immediately marks the service as shutting down and selects exit code 1 without starting or waiting for graceful cleanup.
+- Preserve existing `Error` objects. Wrap other failure values with message `String(value)` and the original value as `cause`; if conversion fails, use a safe fallback without preventing failure handling or exit.
+- Contain fatal logging failures and continue toward exit. Additional fatal events may be reported without starting duplicate exit sequences.
+- Before graceful, forced, or fatal exit, invoke the root logger’s optional `flush()` and wait at most 1,000 milliseconds.
+- Without a flush method, proceed directly to exit. A throwing, rejected, or hanging flush must not prevent exit or change its selected code.
+- Coordinate all exit paths so the process exits once. Permit escalation from exit code 0 to 1 while final flushing is pending; never downgrade failure to success.
+- Once final flushing begins, later signals, failures, or shutdown completion must not restart flushing or extend its deadline.
+- After fatal or forced exit is selected, further signals must not start another graceful sequence. Unfinished graceful work must not delay or reverse that exit.
+- Treat final flushing as best effort, without a durable-delivery guarantee. The runtime owns its HTTP server and lifecycle handlers; additional application resources participate through registered cleanups.
