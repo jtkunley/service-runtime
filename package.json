@@ -1,6 +1,6 @@
 {
   "name": "service-runtime",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Zero-dependency HTTP service runtime for Node.js: scoped request context, outbound context headers, health probes, graceful shutdown, and fatal-error handling.",
   "keywords": [
     "http",
@@ -17,6 +17,17 @@
   ],
   "license": "MIT",
   "author": "jtkunley <jtkunley@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jtkunley/service-runtime.git"
+  },
+  "homepage": "https://github.com/jtkunley/service-runtime#readme",
+  "bugs": {
+    "url": "https://github.com/jtkunley/service-runtime/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     ".": {

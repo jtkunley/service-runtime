@@ -2,9 +2,9 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## 1.0.0
+## 1.0.1
 
-Initial release.
+Initial npm release.
 
 - `configureService(options)` with synchronous validation and configuration snapshots.
 - Scoped request context with typed entries, Express-compatible middleware, and `context.run`.
