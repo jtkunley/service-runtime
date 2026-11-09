@@ -1,4 +1,4 @@
-import type { ChildLogger, LogData, Logger } from "../../lib/logging/logger.js";
+import type { ChildLogger, LogData, Logger } from "../../src/lib/logging/logger.js";
 
 export interface LogEntry {
   readonly scope: string;

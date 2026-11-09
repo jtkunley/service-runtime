@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { validateContextEntries } from "../../lib/config/validate-context.js";
-import { missingContextMessage, resolveContext } from "../../lib/context/resolve-context.js";
-import type { ContextRequest } from "../../lib/context/types.js";
+import { validateContextEntries } from "../../src/lib/config/validate-context.js";
+import { missingContextMessage, resolveContext } from "../../src/lib/context/resolve-context.js";
+import type { ContextRequest } from "../../src/lib/context/types.js";
 
 describe("resolveContext", () => {
   it("gives resolvers lower-cased headers, joined repeats, method, and path", () => {

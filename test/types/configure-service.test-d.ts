@@ -1,7 +1,7 @@
 import express from "express";
 import type { AddressInfo } from "node:net";
 import { describe, expectTypeOf, it } from "vitest";
-import { configureService, type Logger, type Service } from "../../lib/index.js";
+import { configureService, type Logger, type Service } from "../../src/index.js";
 
 declare const logger: Logger;
 

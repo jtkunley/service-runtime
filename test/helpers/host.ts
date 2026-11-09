@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { HostProcess } from "../../lib/lifecycle/host-process.js";
+import type { HostProcess } from "../../src/lib/lifecycle/host-process.js";
 
 /** Stands in for `process`: events are plain emitter events and `exit` only records the code. */
 export class FakeHost extends EventEmitter implements HostProcess {

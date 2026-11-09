@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateContextEntries, validateDestinations } from "../../lib/config/validate-context.js";
+import {
+  validateContextEntries,
+  validateDestinations,
+} from "../../src/lib/config/validate-context.js";
 
 const value = () => undefined;
 

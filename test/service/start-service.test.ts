@@ -1,8 +1,8 @@
 import { createServer, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { releaseListen } from "../../lib/lifecycle/listen-reservation.js";
-import { startService, type ShutdownState } from "../../lib/service/start-service.js";
+import { releaseListen } from "../../src/lib/lifecycle/listen-reservation.js";
+import { startService, type ShutdownState } from "../../src/lib/service/start-service.js";
 import { makeConfig } from "../helpers/config.js";
 import { FakeHost } from "../helpers/host.js";
 import { request } from "../helpers/http.js";
@@ -10,8 +10,8 @@ import { RecordingLogger } from "../helpers/logger.js";
 
 const servers = vi.hoisted(() => [] as Server[]);
 
-vi.mock("../../lib/http/http-server.js", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../../lib/http/http-server.js")>();
+vi.mock("../../src/lib/http/http-server.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../src/lib/http/http-server.js")>();
   return {
     ...original,
     createHttpServer: (...args: Parameters<typeof original.createHttpServer>) => {

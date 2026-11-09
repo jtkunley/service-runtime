@@ -1,5 +1,5 @@
-import { resolveServiceConfig } from "../../lib/config/resolve-service-config.js";
-import type { ServiceConfig } from "../../lib/config/service-config.js";
+import { resolveServiceConfig } from "../../src/lib/config/resolve-service-config.js";
+import type { ServiceConfig } from "../../src/lib/config/service-config.js";
 import { RecordingLogger } from "./logger.js";
 
 /** Builds validated configuration bound to an ephemeral loopback port. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProcessHandlers } from "../../lib/lifecycle/host-process.js";
+import { ProcessHandlers } from "../../src/lib/lifecycle/host-process.js";
 import { FakeHost } from "../helpers/host.js";
 
 describe("ProcessHandlers", () => {

@@ -6,7 +6,7 @@ import {
   requireFunctionList,
   requireIntegerInRange,
   requireRecord,
-} from "../../lib/config/validators.js";
+} from "../../src/lib/config/validators.js";
 
 describe("isRecord", () => {
   it("accepts objects and rejects null and primitives", () => {

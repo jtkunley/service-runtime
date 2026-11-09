@@ -1,8 +1,11 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
-import { validateContextEntries, validateDestinations } from "../../lib/config/validate-context.js";
-import { createRequestContext } from "../../lib/context/request-context.js";
-import type { ContextRequest, ContextSource } from "../../lib/context/types.js";
+import {
+  validateContextEntries,
+  validateDestinations,
+} from "../../src/lib/config/validate-context.js";
+import { createRequestContext } from "../../src/lib/context/request-context.js";
+import type { ContextRequest, ContextSource } from "../../src/lib/context/types.js";
 
 function setup(contextOptions: Record<string, unknown> = defaultContext, destinations?: unknown) {
   const entries = validateContextEntries(contextOptions);

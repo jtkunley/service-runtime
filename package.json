@@ -29,7 +29,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "lib"
+    "src"
   ],
   "sideEffects": false,
   "engines": {

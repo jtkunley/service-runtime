@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toError } from "../../lib/logging/to-error.js";
+import { toError } from "../../src/lib/logging/to-error.js";
 
 describe("toError", () => {
   it("returns existing errors unchanged", () => {

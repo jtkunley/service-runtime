@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
-import { createProbeHandler } from "../../lib/http/probes.js";
+import { createProbeHandler } from "../../src/lib/http/probes.js";
 
 class FakeResponse {
   statusCode = 0;

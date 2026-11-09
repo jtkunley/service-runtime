@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveServiceConfig } from "../../lib/config/resolve-service-config.js";
+import { resolveServiceConfig } from "../../src/lib/config/resolve-service-config.js";
 import { RecordingLogger } from "../helpers/logger.js";
 
 const logger = new RecordingLogger();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { releaseListen, reserveListen } from "../../lib/lifecycle/listen-reservation.js";
+import { releaseListen, reserveListen } from "../../src/lib/lifecycle/listen-reservation.js";
 
 afterEach(() => {
   releaseListen();

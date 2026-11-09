@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateShutdownSignals } from "../../lib/config/validate-signals.js";
+import { validateShutdownSignals } from "../../src/lib/config/validate-signals.js";
 
 describe("validateShutdownSignals", () => {
   it("defaults to SIGTERM and SIGINT", () => {

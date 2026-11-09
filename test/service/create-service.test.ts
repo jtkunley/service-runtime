@@ -1,9 +1,9 @@
 import express from "express";
 import { Agent } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ContextRequest } from "../../lib/context/types.js";
-import { releaseListen } from "../../lib/lifecycle/listen-reservation.js";
-import { createService } from "../../lib/service/create-service.js";
+import type { ContextRequest } from "../../src/lib/context/types.js";
+import { releaseListen } from "../../src/lib/lifecycle/listen-reservation.js";
+import { createService } from "../../src/lib/service/create-service.js";
 import { delay, makeConfig } from "../helpers/config.js";
 import { FakeHost } from "../helpers/host.js";
 import { request } from "../helpers/http.js";

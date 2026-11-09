@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as publicApi from "../lib/index.js";
-import { configureService, type ContextRequest } from "../lib/index.js";
-import { releaseListen } from "../lib/lifecycle/listen-reservation.js";
+import * as publicApi from "../src/index.js";
+import { configureService, type ContextRequest } from "../src/index.js";
+import { releaseListen } from "../src/lib/lifecycle/listen-reservation.js";
 import { RecordingLogger } from "./helpers/logger.js";
 
 const PROCESS_EVENTS = ["SIGTERM", "SIGINT", "uncaughtException", "unhandledRejection"];

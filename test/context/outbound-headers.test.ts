@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildOutboundHeaders } from "../../lib/context/outbound-headers.js";
+import { buildOutboundHeaders } from "../../src/lib/context/outbound-headers.js";
 
 const mappings = [
   { entry: "tenant", header: "X-Tenant" },

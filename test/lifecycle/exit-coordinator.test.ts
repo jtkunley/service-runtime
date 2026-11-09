@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExitCoordinator } from "../../lib/lifecycle/exit-coordinator.js";
+import { ExitCoordinator } from "../../src/lib/lifecycle/exit-coordinator.js";
 import { FakeHost } from "../helpers/host.js";
 import { RecordingLogger } from "../helpers/logger.js";
 

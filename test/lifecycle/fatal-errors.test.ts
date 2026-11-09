@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ExitCoordinator } from "../../lib/lifecycle/exit-coordinator.js";
-import { createFatalErrorHandlers } from "../../lib/lifecycle/fatal-errors.js";
+import { ExitCoordinator } from "../../src/lib/lifecycle/exit-coordinator.js";
+import { createFatalErrorHandlers } from "../../src/lib/lifecycle/fatal-errors.js";
 import { FakeHost } from "../helpers/host.js";
 import { RecordingLogger } from "../helpers/logger.js";
 

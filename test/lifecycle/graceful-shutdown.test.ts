@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ExitCoordinator } from "../../lib/lifecycle/exit-coordinator.js";
+import { ExitCoordinator } from "../../src/lib/lifecycle/exit-coordinator.js";
 import {
   createGracefulShutdown,
   type GracefulShutdownOptions,
-} from "../../lib/lifecycle/graceful-shutdown.js";
-import type { Cleanup } from "../../lib/service/types.js";
+} from "../../src/lib/lifecycle/graceful-shutdown.js";
+import type { Cleanup } from "../../src/lib/service/types.js";
 import { FakeHost } from "../helpers/host.js";
 import { RecordingLogger } from "../helpers/logger.js";
 

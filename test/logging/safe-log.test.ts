@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tryLogError, tryLogInfo } from "../../lib/logging/safe-log.js";
+import { tryLogError, tryLogInfo } from "../../src/lib/logging/safe-log.js";
 import { RecordingLogger } from "../helpers/logger.js";
 
 describe("tryLogInfo", () => {

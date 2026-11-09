@@ -1,6 +1,6 @@
 import { Agent, createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { closeServer, createHttpServer, listenOn } from "../../lib/http/http-server.js";
+import { closeServer, createHttpServer, listenOn } from "../../src/lib/http/http-server.js";
 import { delay } from "../helpers/config.js";
 import { request } from "../helpers/http.js";
 

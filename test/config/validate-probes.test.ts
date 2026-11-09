@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateProbes } from "../../lib/config/validate-probes.js";
+import { validateProbes } from "../../src/lib/config/validate-probes.js";
 
 describe("validateProbes", () => {
   it("defaults to /readiness and /liveness", () => {
