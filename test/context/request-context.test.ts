@@ -1,3 +1,5 @@
+import { createServer, type IncomingHttpHeaders } from "node:http";
+import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,9 +9,16 @@ import {
 import { createRequestContext } from "../../src/lib/context/request-context.js";
 import type { ContextRequest, ContextSource } from "../../src/lib/context/types.js";
 
-function setup(contextOptions: Record<string, unknown> = defaultContext, destinations?: unknown) {
+function setupRequestContext(
+  contextOptions: Record<string, unknown> = defaultContext,
+  destinations?: unknown,
+) {
   const entries = validateContextEntries(contextOptions);
-  return createRequestContext(entries, validateDestinations(destinations, entries)).context;
+  return createRequestContext(entries, validateDestinations(destinations, entries));
+}
+
+function setup(contextOptions: Record<string, unknown> = defaultContext, destinations?: unknown) {
+  return setupRequestContext(contextOptions, destinations).context;
 }
 
 const defaultContext = {
@@ -298,5 +307,79 @@ describe("context.getHeaders", () => {
     context.run({ headers: {} }, () => {
       expect(() => context.getHeaders("billing")).toThrow(TypeError);
     });
+  });
+});
+
+describe("createFetch", () => {
+  const destinations = { default: ["tenant"], audit: ["traceId"] };
+
+  async function withEchoServer(run: (url: string) => Promise<void>): Promise<IncomingHttpHeaders> {
+    let received: IncomingHttpHeaders = {};
+    const server = createServer((req, res) => {
+      received = req.headers;
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await run(`http://127.0.0.1:${port}/`);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+    return received;
+  }
+
+  it("sends the default destination's headers through Node's fetch", async () => {
+    const { context, createFetch } = setupRequestContext(defaultContext, destinations);
+    const contextFetch = createFetch();
+
+    const received = await withEchoServer((url) =>
+      context.run(source("acme", "t-1"), async () => {
+        await (await contextFetch(url)).text();
+      }),
+    );
+
+    expect(received["x-tenant"]).toBe("acme");
+    expect(received["x-trace"]).toBeUndefined();
+  });
+
+  it("sends the headers of a named or combined destination", async () => {
+    const { context, createFetch } = setupRequestContext(defaultContext, destinations);
+    const auditFetch = createFetch("audit");
+    const combinedFetch = createFetch(["default", "audit"]);
+
+    const audit = await withEchoServer((url) =>
+      context.run(source("acme", "t-1"), async () => {
+        await (await auditFetch(url)).text();
+      }),
+    );
+    const combined = await withEchoServer((url) =>
+      context.run(source("acme", "t-1"), async () => {
+        await (await combinedFetch(url)).text();
+      }),
+    );
+
+    expect([audit["x-tenant"], audit["x-trace"]]).toEqual([undefined, "t-1"]);
+    expect([combined["x-tenant"], combined["x-trace"]]).toEqual(["acme", "t-1"]);
+  });
+
+  it("sends no context headers outside a context", async () => {
+    const contextFetch = setupRequestContext(defaultContext, destinations).createFetch();
+
+    const received = await withEchoServer(async (url) => {
+      await (await contextFetch(url)).text();
+    });
+
+    expect(received["x-tenant"]).toBeUndefined();
+  });
+
+  it("rejects unknown destinations when the fetch is created", () => {
+    const { createFetch } = setupRequestContext(defaultContext, { audit: ["traceId"] });
+
+    expect(() => createFetch()).toThrow(new Error("Unknown destination: default"));
+    expect(() => createFetch(["audit", "payments"])).toThrow(
+      new Error("Unknown destination: payments"),
+    );
   });
 });

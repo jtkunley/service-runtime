@@ -115,6 +115,13 @@ describe("configureService types", () => {
       Record<string, string>
     >();
 
+    expectTypeOf(service.createFetch("billing")).toEqualTypeOf<typeof fetch>();
+    expectTypeOf(service.createFetch(["billing", "audit"])).toEqualTypeOf<typeof fetch>();
+    // @ts-expect-error unknown destination
+    service.createFetch("payments");
+    // @ts-expect-error a name is required without a default destination
+    service.createFetch();
+
     // @ts-expect-error unknown destination
     service.context.getHeaders("payments");
     // @ts-expect-error unknown destination in a list
@@ -141,6 +148,7 @@ describe("configureService types", () => {
 
     expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
     expectTypeOf(service.context.getHeaders("billing")).toEqualTypeOf<Record<string, string>>();
+    expectTypeOf(service.createFetch()).toEqualTypeOf<typeof fetch>();
   });
 
   it("offers only the default destination when destinations are omitted", () => {

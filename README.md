@@ -34,7 +34,7 @@ That's a running service with `/readiness` and `/liveness` probes, graceful shut
 
 ### Forward request context downstream
 
-Declare context entries with an outbound `header` and install the middleware. Anywhere in the request's async call chain, `getHeaders()` returns those headers, ready for your outgoing requests. Mark an entry `required: true` to reject requests without it with a `400`, before your routes run.
+Declare context entries with an outbound `header`, install the middleware, and create a fetch with `service.createFetch()`. It's Node's native `fetch`, and every call made during a request carries that request's headers. Mark an entry `required: true` to reject requests without it with a `400`, before your routes run.
 
 ```ts
 const service = configureService({
@@ -49,19 +49,20 @@ const service = configureService({
   },
 });
 
+const contextFetch = service.createFetch();
+
 app.use(service.middleware);
 
 app.get("/invoices", async (_req, res) => {
-  const response = await fetch("https://billing.internal/invoices", {
-    headers: service.context.getHeaders(), // { "x-tenant-id": "...", "x-request-id": "..." }
-  });
+  // Sends x-tenant-id and x-request-id.
+  const response = await contextFetch("https://billing.internal/invoices");
   res.json(await response.json());
 });
 ```
 
 ### Choose what each service receives
 
-Without `destinations`, every entry with a header is forwarded. Declare `destinations` to forward less: `getHeaders()` sends `default`, a name sends that destination, and an array combines several.
+Without `destinations`, every entry with a header is forwarded. Declare `destinations` to forward less, and create one fetch per destination: no name sends `default`, a name sends that destination, and an array combines several.
 
 ```ts
 destinations: {
@@ -72,9 +73,19 @@ destinations: {
 ```
 
 ```ts
-service.context.getHeaders(); // tenant and requestId
-service.context.getHeaders("analytics"); // requestId only
-service.context.getHeaders(["analytics", "audit"]); // requestId and tenant
+const billingFetch = service.createFetch(); // tenant and requestId
+const analyticsFetch = service.createFetch("analytics"); // requestId only
+const auditFetch = service.createFetch(["analytics", "audit"]); // requestId and tenant
+```
+
+### Use another HTTP client
+
+`context.getHeaders()` returns the same headers as a plain object, for axios, got, undici, or your own fetch. It takes the same destination arguments as `createFetch`.
+
+```ts
+await axios.get("https://billing.internal/invoices", {
+  headers: service.context.getHeaders(),
+});
 ```
 
 ### Use context outside HTTP
@@ -83,7 +94,7 @@ Queue consumers and scheduled jobs establish the same context with `context.run`
 
 ```ts
 await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () => {
-  await fetch(job.callbackUrl, { headers: service.context.getHeaders() });
+  await contextFetch(job.callbackUrl);
 });
 ```
 
@@ -150,17 +161,21 @@ Each context entry declares a synchronous `value(request)` resolver. The resolve
 
 ### Outbound headers
 
-`context.getHeaders(destination?)` returns a fresh object with the destination's currently defined values, keyed by header name, or `{}` outside a context. The runtime never makes network requests itself.
+`service.createFetch(destination?)` returns Node's global `fetch`, wrapped so each call sends the current context's headers for the destination. Headers passed to a call take precedence over context headers of the same name, and calls outside a context send no context headers. The destination is checked when the fetch is created.
+
+`context.getHeaders(destination?)` returns a fresh object with the destination's currently defined values, keyed by header name, or `{}` outside a context.
+
+Both take the same destination argument:
 
 - Without `destinations`, a single `default` destination contains every entry that declares a `header`.
-- With `destinations`, only the listed entries are forwarded. Calling `getHeaders()` without a name requires a `default` destination; otherwise it's a type error and throws `Unknown destination: default`.
+- With `destinations`, only the listed entries are forwarded. Omitting the name requires a `default` destination; otherwise it's a type error and throws `Unknown destination: default`.
 - An array of names combines destinations, including each entry once.
 - Listed entries must declare a `header`. Entries sent together, whether from one destination or a combined list, cannot share a header name (case-insensitive).
 - Header names are validated at configuration. An invalid value throws a `TypeError` naming the entry and header, but not the value, when headers are generated. Undeclared destinations throw `Unknown destination: <name>`.
 
 ### Reading values directly
 
-Most services should not need these. Context is meant to travel through `getHeaders()`, and destinations decide what each service receives. Reach for direct reads only when a value is used inside your own service and never forwarded, such as adding it to your logger's context.
+Most services should not need these. Context is meant to travel through `createFetch()` or `getHeaders()`, and destinations decide what each service receives. Reach for direct reads only when a value is used inside your own service and never forwarded, such as adding it to your logger's context.
 
 | Method               | Inside a context                          | Outside a context           |
 | -------------------- | ----------------------------------------- | --------------------------- |

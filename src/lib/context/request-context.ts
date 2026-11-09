@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { DEFAULT_DESTINATION } from "../config/defaults.js";
 import type { ContextEntryConfig, OutboundHeader } from "../config/service-config.js";
+import { createContextFetch } from "./context-fetch.js";
 import { buildOutboundHeaders } from "./outbound-headers.js";
 import {
   missingContextMessage,
@@ -16,7 +17,11 @@ export interface RequestContext {
   resolve(source: ContextSource): ContextResolution;
   /** Runs `fn` with an already-resolved store as the current context. */
   enter<Result>(store: ContextStore, fn: () => Result): Result;
+  /** Returns a `fetch` that sends the destinations' current headers; validates names immediately. */
+  readonly createFetch: (destination?: Destinations) => typeof fetch;
 }
+
+type Destinations = string | readonly string[];
 
 export function createRequestContext(
   entries: readonly ContextEntryConfig[],
@@ -45,15 +50,23 @@ export function createRequestContext(
       return storage.getStore();
     },
 
-    getHeaders(
-      destination: string | readonly string[] = DEFAULT_DESTINATION,
-    ): Record<string, string> {
-      const names = typeof destination === "string" ? [destination] : destination;
-      return buildOutboundHeaders(combineDestinations(destinations, names), storage.getStore());
+    getHeaders(destination: Destinations = DEFAULT_DESTINATION): Record<string, string> {
+      return buildOutboundHeaders(mappingsFor(destination), storage.getStore());
     },
   });
 
-  return { context, resolve, enter };
+  const mappingsFor = (destination: Destinations) =>
+    combineDestinations(
+      destinations,
+      typeof destination === "string" ? [destination] : destination,
+    );
+
+  const createFetch = (destination: Destinations = DEFAULT_DESTINATION) => {
+    const mappings = mappingsFor(destination);
+    return createContextFetch(() => buildOutboundHeaders(mappings, storage.getStore()));
+  };
+
+  return { context, resolve, enter, createFetch };
 }
 
 /**

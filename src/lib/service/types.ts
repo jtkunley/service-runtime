@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import type {
   ContextDestinations,
   ContextEntries,
+  GetHeadersArgs,
   KnownAttributes,
   KnownEntries,
   ServiceContext,
@@ -53,6 +54,12 @@ export interface Service<Values = EmptyRecord, Destination extends string = "def
   readonly context: ServiceContext<Values, Destination>;
   /** Express-compatible middleware that runs downstream work inside a resolved context. */
   readonly middleware: Middleware;
+  /**
+   * Returns Node's `fetch`, wrapped so each call sends the current headers for the destination
+   * (or the combined destinations); headers passed to the call take precedence. Without a name,
+   * uses the `default` destination. Unknown destinations throw immediately.
+   */
+  createFetch(...destination: GetHeadersArgs<Destination>): typeof fetch;
   /** Becomes `true` once graceful shutdown or fatal exit begins, and never resets. */
   isShuttingDown(): boolean;
   /** Starts the HTTP server and process handlers; resolves with the bound address. */

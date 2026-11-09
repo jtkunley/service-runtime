@@ -42,7 +42,8 @@
 - Validate outbound values using Node HTTP rules. If a value is invalid, throw `TypeError` identifying the entry and header without including the raw value; do not return a partial result.
 - Return an empty header object for a declared destination with no applicable values or when called outside context. Throw `Unknown destination: <name>` for an undeclared destination.
 - Return a fresh header object on each call, preserving valid names as ordinary own properties. Mutating it must not change context or subsequent results.
-- Generate headers without making network requests. Callers apply returned headers to their own outgoing requests.
+- Expose `service.createFetch(destination?)`, accepting the same destination arguments as `getHeaders`, returning a function with the type of Node’s global `fetch` that calls the global `fetch` with the destination’s current headers added. Headers supplied to a call take precedence; outside a context no context headers are added. Validate destination names when the fetch is created.
+- Never initiate network requests on the runtime’s own behalf. Callers using other HTTP clients apply `getHeaders` results themselves.
 - `listen(app)` starts an owned Node HTTP server using the supplied request listener. An omitted host uses Node’s default binding behavior.
 - Resolve `listen()` with the actual bound address only after successful binding. Reject startup and binding failures, including an occupied port.
 - Permit only one active or pending listening lifecycle per process. Reject repeated or competing attempts with `Only one service can listen per process`.

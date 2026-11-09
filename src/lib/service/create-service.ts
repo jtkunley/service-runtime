@@ -25,6 +25,7 @@ export function createService(
   const service: Service<ContextStore, string> = {
     context: requestContext.context,
     middleware: createContextMiddleware(requestContext, contextLog),
+    createFetch: requestContext.createFetch,
     isShuttingDown: state.isShuttingDown,
     listen: (app) => startService({ config, app, host, state }),
   };

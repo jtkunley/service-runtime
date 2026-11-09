@@ -24,6 +24,7 @@ describe("createService", () => {
     expect(logger.childCalls).toEqual(["server/context"]);
     expect(on).not.toHaveBeenCalled();
     expect(service.isShuttingDown()).toBe(false);
+    expect(service.createFetch()).toBeTypeOf("function");
     expect(Object.isFrozen(service)).toBe(true);
   });
 
