@@ -3,6 +3,8 @@
 [![npm](https://img.shields.io/npm/v/@jtkunley/service-runtime)](https://www.npmjs.com/package/@jtkunley/service-runtime)
 [![CI](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml/badge.svg)](https://github.com/jtkunley/service-runtime/actions/workflows/ci.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.12-brightgreen)](package.json)
+[![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6?logo=typescript&logoColor=white)](src/index.ts)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A zero-dependency HTTP service runtime for Node.js. It handles the operational parts of running a service so your application code doesn't have to:
