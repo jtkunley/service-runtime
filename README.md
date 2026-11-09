@@ -19,45 +19,173 @@ Requires Node.js 22.12 or later. The package is ESM, and `require()` also works 
 ```ts
 import express from "express";
 import { configureService } from "service-runtime";
-import { logger } from "./logger.js";
+import { logger } from "./logger.js"; // see "Bring your own logger"
 
+const service = configureService({ logger, port: 3000 });
+
+const app = express();
+app.get("/", (_req, res) => res.send("ok"));
+
+await service.listen(app);
+```
+
+That's a running service with `/readiness` and `/liveness` probes, graceful shutdown on `SIGTERM` and `SIGINT`, and fatal-error handling. Each example below adds one feature to it.
+
+## Examples
+
+### Read values from each request
+
+Declare context entries, install the middleware, and read the values anywhere in the request's async call chain, with no need to pass them through function arguments.
+
+```ts
 const service = configureService({
   logger,
   port: 3000,
   context: {
-    tenant: {
-      value: (request) => request.headers["x-tenant-id"],
-      required: true,
-      header: "x-tenant-id",
-    },
-    requestId: {
-      value: (request) => request.headers["x-request-id"] ?? crypto.randomUUID(),
-      header: "x-request-id",
-    },
+    requestId: { value: (request) => request.headers["x-request-id"] ?? crypto.randomUUID() },
+  },
+});
+
+app.use(service.middleware);
+
+app.get("/", (_req, res) => {
+  res.send(service.context.get("requestId"));
+});
+```
+
+### Require a value
+
+Mark an entry `required: true` to reject requests that don't provide it. They get a `400` response, and your routes never run. Required entries are typed as `string` instead of `string | undefined`.
+
+```ts
+context: {
+  tenant: { value: (request) => request.headers["x-tenant-id"], required: true },
+},
+```
+
+```ts
+const tenant = service.context.get("tenant"); // string
+```
+
+### Forward context to downstream services
+
+Give entries an outbound `header` and list them in the `default` destination. `getHeaders()` then returns the headers to attach to your outgoing requests.
+
+```ts
+const service = configureService({
+  logger,
+  port: 3000,
+  context: {
+    tenant: { value: (r) => r.headers["x-tenant-id"], required: true, header: "x-tenant-id" },
+    requestId: { value: (r) => r.headers["x-request-id"], header: "x-request-id" },
   },
   destinations: {
     default: ["tenant", "requestId"],
-    analytics: ["requestId"],
   },
-  cleanups: [() => database.close()],
 });
-
-const app = express();
-app.use(service.middleware);
 
 app.get("/invoices", async (_req, res) => {
-  const tenant = service.context.get("tenant"); // string
-  const invoices = await fetch("https://billing.internal/invoices", {
-    headers: service.context.getHeaders(), // the default destination
+  const response = await fetch("https://billing.internal/invoices", {
+    headers: service.context.getHeaders(),
   });
-  res.json({ tenant, invoices: await invoices.json() });
+  res.json(await response.json());
 });
-
-const address = await service.listen(app);
-logger.child("app", "startup").info("Listening", { port: address.port });
 ```
 
-## Configuration
+### Send different headers to different services
+
+Declare more destinations when some services should receive less. Any destination other than `default` must be named when you call `getHeaders`.
+
+```ts
+destinations: {
+  default: ["tenant", "requestId"],
+  analytics: ["requestId"],
+},
+```
+
+```ts
+await fetch("https://analytics.example.com/events", {
+  method: "POST",
+  headers: service.context.getHeaders("analytics"), // { "x-request-id": "..." }
+});
+```
+
+### Use context outside HTTP
+
+Queue consumers and scheduled jobs can establish the same context with `context.run`.
+
+```ts
+await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () => {
+  await processJob(job); // context.get("tenant") and getHeaders() work in here
+});
+```
+
+### Include context in your logs
+
+The runtime doesn't touch your logger's context. Read the current values with `getStore()` when writing log lines.
+
+```ts
+function log(message: string) {
+  console.log(JSON.stringify({ message, ...service.context.getStore() }));
+}
+```
+
+### Close resources on shutdown
+
+`cleanups` run one at a time, in order, after in-flight requests finish. `onShutdownStart` runs first, while the server is still draining.
+
+```ts
+const service = configureService({
+  logger,
+  port: 3000,
+  onShutdownStart: () => queue.pause(),
+  cleanups: [() => queue.close(), () => database.close()],
+});
+```
+
+Long-running work can check `service.isShuttingDown()` to stop early.
+
+### Customize health probes
+
+Move a probe to another path, or turn one off with `false`.
+
+```ts
+probes: { readiness: "/ready", liveness: false },
+```
+
+### Tune shutdown and timeouts
+
+```ts
+const service = configureService({
+  logger,
+  port: 3000,
+  host: "0.0.0.0",
+  shutdownSignals: ["SIGTERM"],
+  forceExitMs: 10_000,
+  keepAliveTimeoutMs: 75_000,
+});
+```
+
+### Bring your own logger
+
+Any logger with a `child(module, action)` method works. This one writes to the console:
+
+```ts
+import type { Logger } from "service-runtime";
+
+export const logger: Logger = {
+  child: (module, action) => ({
+    info: (message, data) => console.log(module, action, message, data),
+    error: (message, error, data) => console.error(module, action, message, error, data),
+  }),
+};
+```
+
+Add an optional `flush()` method if your logger buffers output. The runtime calls it before exiting.
+
+## Reference
+
+### Configuration
 
 `configureService(options)` validates its options and returns a service. It throws synchronously on invalid input. Configuring a service opens no sockets and installs no process handlers, so you can configure several services before listening. The options are copied when the service is created, so later changes to them have no effect.
 
@@ -77,36 +205,17 @@ logger.child("app", "startup").info("Listening", { port: address.port });
 
 Invalid ports and timeouts throw `RangeError`. Other invalid options throw `TypeError`.
 
-## Request context
+### Request context
 
 Each context entry declares a synchronous `value(request)` resolver. The resolver receives lower-cased header names (repeated headers are joined with `", "`), the method, and the path without its query string. Returned strings are trimmed. `undefined`, empty strings, and whitespace-only strings count as absent.
 
-```ts
-context: {
-  tenant: { value: (r) => r.headers["x-tenant-id"], required: true },
-  locale: { value: (r) => r.headers["accept-language"] ?? "en" },
-}
-```
-
 Types are inferred from the configuration: `required: true` entries are typed as `string`, other entries as `string | undefined`. Unknown keys and unknown entry attributes are compile-time errors.
-
-### HTTP middleware
 
 `service.middleware` is Express-compatible middleware. Install it before the routes that need context. It resolves every entry once and runs the downstream middleware and routes inside that context, including mounted routers, body parsing, and async work.
 
 If required values are missing, the middleware responds with status `400` and `{ "error": "Missing required context value: tenant" }`, and downstream code does not run. The rejection is logged through `server/context` with `{ method, path, missing }`. Headers, query strings, and resolved values are never logged. If a resolver throws, the error is passed to `next(error)` so your framework's error handling deals with it.
 
-### Programmatic context
-
-Use `context.run` for work that isn't triggered by HTTP, such as queue consumers or scheduled jobs:
-
-```ts
-await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () => {
-  await processJob(job);
-});
-```
-
-`run` returns exactly what the callback returns, including promises. It throws before invoking the callback if required values are missing. Nested calls temporarily replace the current values and restore the outer context afterwards.
+`context.run(source, fn)` returns exactly what the callback returns, including promises. It throws before invoking the callback if required values are missing. Nested calls temporarily replace the current values and restore the outer context afterwards.
 
 | Method                      | Inside a context           | Outside a context           |
 | --------------------------- | -------------------------- | --------------------------- |
@@ -114,24 +223,15 @@ await service.context.run({ headers: { "x-tenant-id": job.tenant } }, async () =
 | `context.getStore()`        | All values (immutable)     | `undefined`                 |
 | `context.getHeaders(dest?)` | That destination's headers | `{}`                        |
 
-The runtime does not configure your logger's context automatically. To include context values in log lines, read them with `getStore()` in your logger setup.
+### Outbound headers
 
-## Outbound headers
+Destinations list the context entries each downstream service may receive. Every listed entry must declare a `header`, and two entries in the same destination cannot share a header name.
 
-Destinations list the context entries each downstream service may receive. Every listed entry must declare a `header`.
+A destination named `default` is used when you call `context.getHeaders()` without a name. Other destinations must be named explicitly. If no `default` is declared, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
 
-```ts
-destinations: {
-  default: ["tenant", "requestId"],
-  analytics: ["requestId"],
-}
-```
+`getHeaders` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
 
-A destination named `default` is used when you call `context.getHeaders()` without a name, so most call sites don't need to name one. Other destinations must be named explicitly, as in `context.getHeaders("analytics")`. If no `default` is declared, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
-
-`context.getHeaders("analytics")` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
-
-## Health probes
+### Health probes
 
 Probe requests (`GET` or `HEAD`) are answered before your application and before the context middleware runs. Probe responses have empty bodies, and query strings are ignored when matching.
 
@@ -140,7 +240,7 @@ Probe requests (`GET` or `HEAD`) are answered before your application and before
 | `readiness` | `200`            | `503`                       |
 | `liveness`  | `200`            | `200` while reachable       |
 
-## Listening and shutdown
+### Listening and shutdown
 
 `service.listen(app)` starts an HTTP server owned by the runtime. It accepts any Node request listener, including an Express app, and resolves with the bound address. Only one service can listen per process. If startup fails, everything the attempt opened is closed again and the reservation is released, so you can retry.
 
@@ -157,9 +257,9 @@ Uncaught exceptions and unhandled rejections are logged through `server/fatal`, 
 
 `service.isShuttingDown()` becomes `true` when shutdown or a fatal exit begins, and never resets.
 
-## Logging
+### Logging
 
-Bring your own logger. The root logger needs a `child(module, action)` method, and can optionally provide a `flush()` method:
+The root logger needs a `child(module, action)` method, and can optionally provide a `flush()` method:
 
 ```ts
 interface Logger {
