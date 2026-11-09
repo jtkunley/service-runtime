@@ -4,20 +4,16 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  validateContextEntries,
-  validateDestinations,
-} from "../../src/lib/config/validate-context.js";
 import { createRequestContext } from "../../src/lib/context/request-context.js";
 import type { ContextRequest } from "../../src/lib/context/types.js";
 import { createContextMiddleware, type MiddlewareRequest } from "../../src/lib/http/middleware.js";
+import { makeConfig } from "../helpers/config.js";
 import { request } from "../helpers/http.js";
 import { RecordingLogger } from "../helpers/logger.js";
 
 function setup(contextOptions: Record<string, unknown>) {
   const logger = new RecordingLogger();
-  const entries = validateContextEntries(contextOptions);
-  const requestContext = createRequestContext(entries, validateDestinations(undefined, entries));
+  const requestContext = createRequestContext(makeConfig({ context: contextOptions }));
   const middleware = createContextMiddleware(requestContext, logger.child("server", "context"));
   return { logger, context: requestContext.context, middleware };
 }

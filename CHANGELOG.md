@@ -8,7 +8,7 @@ Initial npm release.
 
 - `configureService(options)` with synchronous validation and configuration snapshots.
 - Scoped request context with typed entries, Express-compatible middleware, and `context.run`.
-- Per-destination outbound context headers with Node HTTP header validation.
+- Outbound context headers: a default destination with every entry that declares a header, plus explicitly listed named destinations, with Node HTTP header validation.
 - Readiness and liveness probes.
 - Graceful shutdown with `onShutdownStart`, connection draining, ordered cleanups, and a deadline.
 - Fatal-error handling and a single coordinated process exit with a best-effort logger flush.

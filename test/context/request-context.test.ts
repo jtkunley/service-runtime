@@ -1,15 +1,11 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
-import {
-  validateContextEntries,
-  validateDestinations,
-} from "../../src/lib/config/validate-context.js";
 import { createRequestContext } from "../../src/lib/context/request-context.js";
 import type { ContextRequest, ContextSource } from "../../src/lib/context/types.js";
+import { makeConfig } from "../helpers/config.js";
 
 function setup(contextOptions: Record<string, unknown> = defaultContext, destinations?: unknown) {
-  const entries = validateContextEntries(contextOptions);
-  return createRequestContext(entries, validateDestinations(destinations, entries)).context;
+  return createRequestContext(makeConfig({ context: contextOptions, destinations })).context;
 }
 
 const defaultContext = {
@@ -211,7 +207,24 @@ describe("context.getHeaders", () => {
   });
 
   it("returns an empty object outside a context", () => {
-    expect(setup(defaultContext, destinations).getHeaders("billing")).toEqual({});
+    const context = setup(defaultContext, destinations);
+
+    expect(context.getHeaders("billing")).toEqual({});
+    expect(context.getHeaders()).toEqual({});
+  });
+
+  it("uses the default destination, every entry with a header, when none is named", () => {
+    const context = setup({
+      ...defaultContext,
+      internal: { value: () => "not forwarded" },
+    });
+
+    context.run(source("acme", "t-1"), () => {
+      expect(context.getHeaders()).toEqual({ "X-Tenant": "acme", "x-trace": "t-1" });
+    });
+    context.run(source("acme"), () => {
+      expect(context.getHeaders()).toEqual({ "X-Tenant": "acme" });
+    });
   });
 
   it.each(["payments", "toString"])("throws for undeclared destination %s", (name) => {

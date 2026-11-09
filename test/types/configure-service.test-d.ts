@@ -84,9 +84,10 @@ describe("configureService types", () => {
     });
 
     expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<
-      "billing" | "audit"
+      "billing" | "audit" | undefined
     >();
     expectTypeOf(service.context.getHeaders("billing")).toEqualTypeOf<Record<string, string>>();
+    expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
 
     // @ts-expect-error unknown destination
     service.context.getHeaders("payments");
@@ -100,23 +101,23 @@ describe("configureService types", () => {
     });
   });
 
-  it("declares no destinations when only context is configured", () => {
+  it("offers only the default destination when no named destinations are declared", () => {
     const service = configureService({
       logger,
       port: 0,
       context: { tenant: { value: () => "acme", header: "x-tenant" } },
     });
 
-    expectTypeOf(service.context.getHeaders.bind(service.context))
-      .parameter(0)
-      .toEqualTypeOf<never>();
+    expectTypeOf(service.context.getHeaders()).toEqualTypeOf<Record<string, string>>();
+    // @ts-expect-error no named destinations are declared
+    service.context.getHeaders("billing");
   });
 
   it("exposes an empty store and no destinations without context configuration", () => {
     const service = configureService({ logger, port: 0 });
 
     expectTypeOf(service).toEqualTypeOf<Service>();
-    expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<never>();
+    expectTypeOf<Parameters<typeof service.context.getHeaders>[0]>().toEqualTypeOf<undefined>();
     // @ts-expect-error no context keys are configured
     service.context.get("tenant");
   });

@@ -6,7 +6,16 @@ import { isRecord, requireRecord } from "./validators.js";
 export function validateContextEntries(entries: unknown): readonly ContextEntryConfig[] {
   if (entries === undefined) return [];
   const records = requireRecord("context", entries);
-  return Object.freeze(Object.entries(records).map(([name, entry]) => validateEntry(name, entry)));
+  const validated = Object.entries(records).map(([name, entry]) => validateEntry(name, entry));
+  assertUniqueHeaders(validated);
+  return Object.freeze(validated);
+}
+
+/** The default destination: every entry that declares a header, in configuration order. */
+export function defaultDestination(
+  entries: readonly ContextEntryConfig[],
+): readonly OutboundHeader[] {
+  return Object.freeze(entries.filter(hasHeader).map(toOutboundHeader));
 }
 
 export function validateDestinations(
@@ -57,6 +66,21 @@ function isValidHeaderName(name: string): boolean {
   }
 }
 
+/** Every header-bearing entry joins the default destination, so header names must be unique. */
+function assertUniqueHeaders(entries: readonly ContextEntryConfig[]): void {
+  const entryByHeader = new Map<string, string>();
+  for (const entry of entries.filter(hasHeader)) {
+    const headerKey = entry.header.toLowerCase();
+    const conflict = entryByHeader.get(headerKey);
+    if (conflict !== undefined) {
+      throw new TypeError(
+        `Context entries "${conflict}" and "${entry.name}" both use header "${entry.header}"`,
+      );
+    }
+    entryByHeader.set(headerKey, entry.name);
+  }
+}
+
 function validateDestination(
   destination: string,
   entryNames: unknown,
@@ -66,29 +90,28 @@ function validateDestination(
     throw new TypeError(`Destination "${destination}" must be an array of context entry names`);
   }
 
-  const mappingsByHeader = new Map<string, OutboundHeader>();
-  for (const entryName of new Set<unknown>(entryNames)) {
+  const mappings = [...new Set<unknown>(entryNames)].map((entryName) => {
     const entry = typeof entryName === "string" ? entriesByName.get(entryName) : undefined;
     if (entry === undefined) {
       throw new TypeError(
         `Destination "${destination}" lists unknown context entry "${String(entryName)}"`,
       );
     }
-    if (entry.header === undefined) {
+    if (!hasHeader(entry)) {
       throw new TypeError(
         `Destination "${destination}" lists context entry "${entry.name}", which has no header`,
       );
     }
+    return toOutboundHeader(entry);
+  });
 
-    const headerKey = entry.header.toLowerCase();
-    const conflict = mappingsByHeader.get(headerKey);
-    if (conflict !== undefined) {
-      throw new TypeError(
-        `Destination "${destination}" maps context entries "${conflict.entry}" and "${entry.name}" to header "${entry.header}"`,
-      );
-    }
-    mappingsByHeader.set(headerKey, Object.freeze({ entry: entry.name, header: entry.header }));
-  }
+  return Object.freeze(mappings);
+}
 
-  return Object.freeze([...mappingsByHeader.values()]);
+function hasHeader(entry: ContextEntryConfig): entry is ContextEntryConfig & { header: string } {
+  return entry.header !== undefined;
+}
+
+function toOutboundHeader(entry: ContextEntryConfig & { header: string }): OutboundHeader {
+  return Object.freeze({ entry: entry.name, header: entry.header });
 }

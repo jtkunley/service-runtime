@@ -27,7 +27,7 @@ export type ContextEntries<Entries = Record<string, ContextEntry>> = {
     Readonly<Record<Exclude<keyof Entries[Name], keyof ContextEntry>, never>>;
 };
 
-/** Maps each destination name to the context entries it may receive. */
+/** Maps each named destination to the context entries it may receive, listed explicitly. */
 export type ContextDestinations<Entries> = Readonly<
   Record<string, readonly (keyof Entries & string)[]>
 >;
@@ -59,8 +59,11 @@ export interface ServiceContext<Values, Destination extends string> {
   get<Name extends keyof Values>(name: Name): Values[Name];
   /** Returns all current values, or `undefined` outside a context. */
   getStore(): Values | undefined;
-  /** Returns the defined values a destination may receive, keyed by their outbound header names. */
-  getHeaders(destination: Destination): Record<string, string>;
+  /**
+   * Returns the currently defined values a destination may receive, keyed by outbound header name.
+   * Without a destination, returns every entry that declares a header (the default destination).
+   */
+  getHeaders(destination?: Destination): Record<string, string>;
 }
 
 /** The untyped store used internally; public types narrow it per configuration. */

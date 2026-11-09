@@ -26,6 +26,8 @@ export interface ServiceConfig {
   readonly port: number;
   readonly host: string | undefined;
   readonly context: readonly ContextEntryConfig[];
+  /** Every entry that declares a header; used when `getHeaders()` names no destination. */
+  readonly defaultDestination: readonly OutboundHeader[];
   readonly destinations: ReadonlyMap<string, readonly OutboundHeader[]>;
   readonly probes: ProbePaths;
   readonly cleanups: readonly Cleanup[];
