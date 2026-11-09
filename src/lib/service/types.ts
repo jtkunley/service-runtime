@@ -1,6 +1,12 @@
 import type { RequestListener } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { ContextDestinations, ContextEntries, ServiceContext } from "../context/types.js";
+import type {
+  ContextDestinations,
+  ContextEntries,
+  KnownAttributes,
+  KnownEntries,
+  ServiceContext,
+} from "../context/types.js";
 import type { Middleware } from "../http/middleware.js";
 import type { Logger } from "../logging/logger.js";
 
@@ -21,16 +27,16 @@ export interface ProbeOptions {
 }
 
 export interface ServiceOptions<
-  Entries extends ContextEntries<Entries> = EmptyRecord,
-  Destinations extends ContextDestinations<Entries> = EmptyRecord,
+  Entries extends ContextEntries = EmptyRecord,
+  Destinations extends ContextDestinations = EmptyRecord,
 > {
   readonly logger: Logger;
   /** An integer from 0 through 65535; `0` selects an available port. */
   readonly port: number;
   /** Interface to bind; Node's default binding is used when omitted. */
   readonly host?: string | undefined;
-  readonly context?: Entries | undefined;
-  readonly destinations?: Destinations | undefined;
+  readonly context?: (Entries & NoInfer<KnownAttributes<Entries>>) | undefined;
+  readonly destinations?: (Destinations & NoInfer<KnownEntries<Entries, Destinations>>) | undefined;
   readonly probes?: ProbeOptions | undefined;
   /** Run sequentially, in order, after the server closes. */
   readonly cleanups?: readonly Cleanup[] | undefined;

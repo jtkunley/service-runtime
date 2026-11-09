@@ -50,6 +50,30 @@ describe("configureService types", () => {
     });
   });
 
+  it("infers resolver requests and destinations together in any property order", () => {
+    const contextFirst = configureService({
+      logger,
+      port: 0,
+      context: { tenant: { value: (request) => request.headers["x-tenant"], header: "x-tenant" } },
+      destinations: { default: ["tenant"], billing: ["tenant"] },
+    });
+    const destinationsFirst = configureService({
+      logger,
+      port: 0,
+      destinations: { billing: ["tenant"] },
+      context: { tenant: { value: (request) => request.headers["x-tenant"], header: "x-tenant" } },
+    });
+
+    expectTypeOf(contextFirst.context.get("tenant")).toEqualTypeOf<string | undefined>();
+    expectTypeOf<Parameters<typeof contextFirst.context.getHeaders>[0]>().toEqualTypeOf<
+      "default" | "billing" | undefined
+    >();
+    expectTypeOf(destinationsFirst.context.get("tenant")).toEqualTypeOf<string | undefined>();
+    expectTypeOf<
+      Parameters<typeof destinationsFirst.context.getHeaders>[0]
+    >().toEqualTypeOf<"billing">();
+  });
+
   it("rejects unknown context keys", () => {
     const service = configureService({
       logger,

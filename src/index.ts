@@ -9,6 +9,8 @@ export type {
   ContextValues,
   DestinationNames,
   GetHeadersArgs,
+  KnownAttributes,
+  KnownEntries,
   ServiceContext,
 } from "./lib/context/types.js";
 export type { Middleware, MiddlewareRequest, NextFunction } from "./lib/http/middleware.js";

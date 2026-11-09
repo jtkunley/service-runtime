@@ -14,8 +14,8 @@ import type { Service, ServiceOptions } from "./service/types.js";
  */
 export function configureService<
   // Defaults on these parameters would disable resolver parameter inference.
-  const Entries extends ContextEntries<Entries>,
-  const Destinations extends ContextDestinations<Entries>,
+  const Entries extends ContextEntries,
+  const Destinations extends ContextDestinations,
 >(
   options: ServiceOptions<Entries, Destinations>,
 ): Service<ContextValues<Entries>, DestinationNames<Destinations>> {

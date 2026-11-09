@@ -17,23 +17,26 @@ export interface ContextEntry {
   readonly header?: string | undefined;
 }
 
-/**
- * Context entries keyed by name. Used as a self-referential constraint
- * (`Entries extends ContextEntries<Entries>`) so attributes not declared by
- * {@link ContextEntry} are rejected without losing resolver parameter inference.
- */
-export type ContextEntries<Entries = Record<string, ContextEntry>> = {
-  readonly [Name in keyof Entries]: ContextEntry &
-    Readonly<Record<Exclude<keyof Entries[Name], keyof ContextEntry>, never>>;
+/** Context entries keyed by name. */
+export type ContextEntries = Readonly<Record<string, ContextEntry>>;
+
+/** Rejects entry attributes that {@link ContextEntry} does not declare. */
+export type KnownAttributes<Entries> = {
+  readonly [Name in keyof Entries]: Readonly<
+    Record<Exclude<keyof Entries[Name], keyof ContextEntry>, never>
+  >;
 };
 
 /**
  * Maps each destination name to the context entries it may receive. A destination named
  * `default` is used when `getHeaders()` is called without a name.
  */
-export type ContextDestinations<Entries> = Readonly<
-  Record<string, readonly (keyof Entries & string)[]>
->;
+export type ContextDestinations = Readonly<Record<string, readonly string[]>>;
+
+/** Rejects destination lists that name entries not declared in the context. */
+export type KnownEntries<Entries, Destinations> = {
+  readonly [Name in keyof Destinations]: readonly (keyof Entries & string)[];
+};
 
 /** The declared destination names; `never` when no specific destinations were declared. */
 export type DestinationNames<Destinations> = string extends keyof Destinations
@@ -47,7 +50,9 @@ export type GetHeadersArgs<Destination extends string> = "default" extends Desti
 
 /** The resolved values: required entries are strings, the rest may be `undefined`. */
 export type ContextValues<Entries> = {
-  readonly [Name in keyof Entries]: Entries[Name] extends { readonly required: true }
+  readonly [Name in keyof Entries as string extends Name ? never : Name]: Entries[Name] extends {
+    readonly required: true;
+  }
     ? string
     : string | undefined;
 };
