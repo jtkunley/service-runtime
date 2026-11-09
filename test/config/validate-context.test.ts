@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  defaultDestination,
   validateContextEntries,
   validateDestinations,
 } from "../../src/lib/config/validate-context.js";
@@ -61,15 +60,6 @@ describe("validateContextEntries", () => {
     );
   });
 
-  it("rejects two entries that use the same case-insensitive header", () => {
-    expect(() =>
-      validateContextEntries({
-        tenant: { value, header: "X-Tenant" },
-        alias: { value, header: "x-tenant" },
-      }),
-    ).toThrow(new TypeError('Context entries "tenant" and "alias" both use header "x-tenant"'));
-  });
-
   it.each(["", "x tenant", "x-tenant:", "tenänt", 5])("rejects header name %j", (header) => {
     expect(() => validateContextEntries({ tenant: { value, header } })).toThrow(
       new TypeError('Context entry "tenant" has an invalid header name'),
@@ -77,29 +67,14 @@ describe("validateContextEntries", () => {
   });
 });
 
-const entries = validateContextEntries({
-  tenant: { value, header: "X-Tenant" },
-  local: { value },
-  traceId: { value, header: "x-trace-id" },
-});
-
-describe("defaultDestination", () => {
-  it("includes every entry that declares a header, in configuration order", () => {
-    const destination = defaultDestination(entries);
-
-    expect(destination).toEqual([
-      { entry: "tenant", header: "X-Tenant" },
-      { entry: "traceId", header: "x-trace-id" },
-    ]);
-    expect(Object.isFrozen(destination)).toBe(true);
-  });
-
-  it("is empty when no entry declares a header", () => {
-    expect(defaultDestination(validateContextEntries({ local: { value } }))).toEqual([]);
-  });
-});
-
 describe("validateDestinations", () => {
+  const entries = validateContextEntries({
+    tenant: { value, header: "X-Tenant" },
+    traceId: { value, header: "x-trace-id" },
+    alias: { value, header: "x-tenant" },
+    local: { value },
+  });
+
   it("returns no destinations when omitted", () => {
     expect(validateDestinations(undefined, entries).size).toBe(0);
   });
@@ -126,6 +101,11 @@ describe("validateDestinations", () => {
   it("lists a repeated entry once", () => {
     const destinations = validateDestinations({ billing: ["tenant", "tenant"] }, entries);
     expect(destinations.get("billing")).toEqual([{ entry: "tenant", header: "X-Tenant" }]);
+  });
+
+  it("allows the same header in different destinations", () => {
+    const destinations = validateDestinations({ a: ["tenant"], b: ["alias"] }, entries);
+    expect(destinations.size).toBe(2);
   });
 
   it("snapshots destination lists", () => {
@@ -157,6 +137,14 @@ describe("validateDestinations", () => {
   it("rejects an entry without a header", () => {
     expect(() => validateDestinations({ billing: ["local"] }, entries)).toThrow(
       new TypeError('Destination "billing" lists context entry "local", which has no header'),
+    );
+  });
+
+  it("rejects two entries mapped to the same case-insensitive header", () => {
+    expect(() => validateDestinations({ billing: ["tenant", "alias"] }, entries)).toThrow(
+      new TypeError(
+        'Destination "billing" maps context entries "tenant" and "alias" to header "x-tenant"',
+      ),
     );
   });
 });

@@ -35,6 +35,10 @@ const service = configureService({
       header: "x-request-id",
     },
   },
+  destinations: {
+    default: ["tenant", "requestId"],
+    analytics: ["requestId"],
+  },
   cleanups: [() => database.close()],
 });
 
@@ -44,7 +48,7 @@ app.use(service.middleware);
 app.get("/invoices", async (_req, res) => {
   const tenant = service.context.get("tenant"); // string
   const invoices = await fetch("https://billing.internal/invoices", {
-    headers: service.context.getHeaders(), // x-tenant-id and x-request-id
+    headers: service.context.getHeaders(), // the default destination
   });
   res.json({ tenant, invoices: await invoices.json() });
 });
@@ -57,19 +61,19 @@ logger.child("app", "startup").info("Listening", { port: address.port });
 
 `configureService(options)` validates its options and returns a service. It throws synchronously on invalid input. Configuring a service opens no sockets and installs no process handlers, so you can configure several services before listening. The options are copied when the service is created, so later changes to them have no effect.
 
-| Option               | Default                   | Description                                                                              |
-| -------------------- | ------------------------- | ---------------------------------------------------------------------------------------- |
-| `logger`             | required                  | Root logger (see [Logging](#logging)).                                                   |
-| `port`               | required                  | Integer from 0 through 65535. `0` picks an available port.                               |
-| `host`               | Node's default            | Interface to bind.                                                                       |
-| `context`            | `{}`                      | Context entries (see [Request context](#request-context)).                               |
-| `destinations`       | `{}`                      | Named subsets of context entries to forward (see [Outbound headers](#outbound-headers)). |
-| `probes`             | `/readiness`, `/liveness` | Custom probe paths, or `false` to disable a probe.                                       |
-| `cleanups`           | `[]`                      | Functions run sequentially, in order, after the server closes.                           |
-| `onShutdownStart`    | none                      | Awaited when shutdown starts, before the server stops accepting connections.             |
-| `shutdownSignals`    | `["SIGTERM", "SIGINT"]`   | Signals that start graceful shutdown. `SIGKILL` and `SIGSTOP` are rejected.              |
-| `forceExitMs`        | `30000`                   | Graceful shutdown deadline, measured from the first signal.                              |
-| `keepAliveTimeoutMs` | `65000`                   | HTTP keep-alive timeout. The headers timeout is set 1,000 ms higher.                     |
+| Option               | Default                   | Description                                                                           |
+| -------------------- | ------------------------- | ------------------------------------------------------------------------------------- |
+| `logger`             | required                  | Root logger (see [Logging](#logging)).                                                |
+| `port`               | required                  | Integer from 0 through 65535. `0` picks an available port.                            |
+| `host`               | Node's default            | Interface to bind.                                                                    |
+| `context`            | `{}`                      | Context entries (see [Request context](#request-context)).                            |
+| `destinations`       | `{}`                      | Named sets of context entries to forward (see [Outbound headers](#outbound-headers)). |
+| `probes`             | `/readiness`, `/liveness` | Custom probe paths, or `false` to disable a probe.                                    |
+| `cleanups`           | `[]`                      | Functions run sequentially, in order, after the server closes.                        |
+| `onShutdownStart`    | none                      | Awaited when shutdown starts, before the server stops accepting connections.          |
+| `shutdownSignals`    | `["SIGTERM", "SIGINT"]`   | Signals that start graceful shutdown. `SIGKILL` and `SIGSTOP` are rejected.           |
+| `forceExitMs`        | `30000`                   | Graceful shutdown deadline, measured from the first signal.                           |
+| `keepAliveTimeoutMs` | `65000`                   | HTTP keep-alive timeout. The headers timeout is set 1,000 ms higher.                  |
 
 Invalid ports and timeouts throw `RangeError`. Other invalid options throw `TypeError`.
 
@@ -114,23 +118,18 @@ The runtime does not configure your logger's context automatically. To include c
 
 ## Outbound headers
 
-Every context entry that declares a `header` belongs to the **default destination**, which needs no configuration. `context.getHeaders()` with no argument returns all of them:
-
-```ts
-const headers = service.context.getHeaders(); // { "x-tenant-id": "acme", "x-request-id": "..." }
-```
-
-To send only some values to a particular service, declare a **named destination** that explicitly lists the entries it may receive. Every listed entry must declare a `header`.
+Destinations list the context entries each downstream service may receive. Every listed entry must declare a `header`.
 
 ```ts
 destinations: {
+  default: ["tenant", "requestId"],
   analytics: ["requestId"],
 }
 ```
 
-`context.getHeaders("analytics")` returns only that destination's values.
+A destination named `default` is used when you call `context.getHeaders()` without a name, so most call sites don't need to name one. Other destinations must be named explicitly, as in `context.getHeaders("analytics")`. If no `default` is declared, calling `getHeaders()` without a name is a type error, and throws `Unknown destination: default` at runtime.
 
-Either way, the result is a fresh object containing the currently defined values, keyed by their configured header names. Two entries cannot share a header name (compared case-insensitively). Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
+`context.getHeaders("analytics")` returns a fresh object containing only that destination's currently defined values, keyed by their configured header names. Header names are validated when the service is configured. Values are validated when headers are generated: an invalid value throws a `TypeError` that names the entry and header but not the value. Undeclared destinations throw `Unknown destination: <name>`. The runtime never makes network requests itself; you apply the headers to your own outgoing requests.
 
 ## Health probes
 

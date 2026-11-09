@@ -12,7 +12,7 @@ export function createService(
   host: HostProcess,
 ): Service<ContextStore, string> {
   const contextLog = config.logger.child("server", "context");
-  const requestContext = createRequestContext(config);
+  const requestContext = createRequestContext(config.context, config.destinations);
 
   let shuttingDown = false;
   const state: ShutdownState = {

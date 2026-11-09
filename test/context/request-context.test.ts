@@ -1,11 +1,15 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
+import {
+  validateContextEntries,
+  validateDestinations,
+} from "../../src/lib/config/validate-context.js";
 import { createRequestContext } from "../../src/lib/context/request-context.js";
 import type { ContextRequest, ContextSource } from "../../src/lib/context/types.js";
-import { makeConfig } from "../helpers/config.js";
 
 function setup(contextOptions: Record<string, unknown> = defaultContext, destinations?: unknown) {
-  return createRequestContext(makeConfig({ context: contextOptions, destinations })).context;
+  const entries = validateContextEntries(contextOptions);
+  return createRequestContext(entries, validateDestinations(destinations, entries)).context;
 }
 
 const defaultContext = {
@@ -207,24 +211,22 @@ describe("context.getHeaders", () => {
   });
 
   it("returns an empty object outside a context", () => {
-    const context = setup(defaultContext, destinations);
-
-    expect(context.getHeaders("billing")).toEqual({});
-    expect(context.getHeaders()).toEqual({});
+    expect(setup(defaultContext, destinations).getHeaders("billing")).toEqual({});
   });
 
-  it("uses the default destination, every entry with a header, when none is named", () => {
-    const context = setup({
-      ...defaultContext,
-      internal: { value: () => "not forwarded" },
-    });
+  it("uses the destination named default when no name is given", () => {
+    const context = setup(defaultContext, { default: ["traceId"], billing: ["tenant"] });
 
     context.run(source("acme", "t-1"), () => {
-      expect(context.getHeaders()).toEqual({ "X-Tenant": "acme", "x-trace": "t-1" });
+      expect(context.getHeaders()).toEqual({ "x-trace": "t-1" });
+      expect(context.getHeaders("default")).toEqual({ "x-trace": "t-1" });
     });
-    context.run(source("acme"), () => {
-      expect(context.getHeaders()).toEqual({ "X-Tenant": "acme" });
-    });
+  });
+
+  it("throws when no name is given and no default destination is declared", () => {
+    const context = setup(defaultContext, destinations);
+
+    expect(() => context.getHeaders()).toThrow(new Error("Unknown destination: default"));
   });
 
   it.each(["payments", "toString"])("throws for undeclared destination %s", (name) => {

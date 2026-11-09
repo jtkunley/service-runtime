@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ServiceConfig } from "../config/service-config.js";
+import { DEFAULT_DESTINATION } from "../config/defaults.js";
+import type { ContextEntryConfig, OutboundHeader } from "../config/service-config.js";
 import { buildOutboundHeaders } from "./outbound-headers.js";
 import {
   missingContextMessage,
@@ -17,21 +18,14 @@ export interface RequestContext {
   enter<Result>(store: ContextStore, fn: () => Result): Result;
 }
 
-export type ContextConfig = Pick<ServiceConfig, "context" | "defaultDestination" | "destinations">;
-
-export function createRequestContext(config: ContextConfig): RequestContext {
-  const { context: entries, defaultDestination, destinations } = config;
+export function createRequestContext(
+  entries: readonly ContextEntryConfig[],
+  destinations: ReadonlyMap<string, readonly OutboundHeader[]>,
+): RequestContext {
   const storage = new AsyncLocalStorage<ContextStore>();
 
   const resolve = (source: ContextSource) => resolveContext(entries, source);
   const enter = <Result>(store: ContextStore, fn: () => Result) => storage.run(store, fn);
-
-  const mappingsFor = (destination: string | undefined) => {
-    if (destination === undefined) return defaultDestination;
-    const mappings = destinations.get(destination);
-    if (mappings === undefined) throw new Error(`Unknown destination: ${destination}`);
-    return mappings;
-  };
 
   const context: ServiceContext<ContextStore, string> = Object.freeze({
     run<Result>(source: ContextSource, fn: () => Result): Result {
@@ -51,8 +45,10 @@ export function createRequestContext(config: ContextConfig): RequestContext {
       return storage.getStore();
     },
 
-    getHeaders(destination?: string): Record<string, string> {
-      return buildOutboundHeaders(mappingsFor(destination), storage.getStore());
+    getHeaders(destination: string = DEFAULT_DESTINATION): Record<string, string> {
+      const mappings = destinations.get(destination);
+      if (mappings === undefined) throw new Error(`Unknown destination: ${destination}`);
+      return buildOutboundHeaders(mappings, storage.getStore());
     },
   });
 

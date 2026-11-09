@@ -7,11 +7,7 @@ import {
   MAX_TIMER_MS,
 } from "./defaults.js";
 import type { ServiceConfig } from "./service-config.js";
-import {
-  defaultDestination,
-  validateContextEntries,
-  validateDestinations,
-} from "./validate-context.js";
+import { validateContextEntries, validateDestinations } from "./validate-context.js";
 import { validateProbes } from "./validate-probes.js";
 import { validateShutdownSignals } from "./validate-signals.js";
 import {
@@ -33,7 +29,6 @@ export function resolveServiceConfig(input: unknown): ServiceConfig {
     port: requireIntegerInRange("port", options.port, 0, MAX_PORT),
     host: optionalString("host", options.host),
     context,
-    defaultDestination: defaultDestination(context),
     destinations: validateDestinations(options.destinations, context),
     probes: validateProbes(options.probes),
     cleanups: requireFunctionList("cleanups", options.cleanups ?? []),

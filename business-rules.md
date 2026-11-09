@@ -9,7 +9,7 @@
 - Require an integer port from 0 through 65535; reject other values with `RangeError`. Port `0` selects an available port.
 - Require `forceExitMs`, when supplied, to be an integer from 1 through 2,147,483,647 milliseconds. Require `keepAliveTimeoutMs` to be an integer from 1 through 2,147,482,647, leaving room for its derived headers timeout. Reject values outside these ranges with `RangeError`.
 - If obtaining a required child logger throws, fail configuration or startup at that boundary. Do not begin accepting traffic without the required loggers.
-- With no context or destinations configured, impose no context requirements, expose an empty store inside scoped work, and declare no named outbound destinations.
+- With no context or destinations configured, impose no context requirements, expose an empty store inside scoped work, and declare no outbound destinations.
 - Let each context entry declare a synchronous `value(request): string | undefined`, optional `required`, and optional outbound `header` name.
 - Infer configured context keys in public types. Type entries declared with `required: true` as `string`, other entries as `string | undefined`, and reject unknown context keys or entry attributes at compile time.
 - Supply resolvers with lower-cased header names, optional method, and optional path. Join array-valued headers using `, `.
@@ -33,13 +33,13 @@
 - Exclude raw headers, query strings, and resolved values from the runtime’s rejection-log data. Emit no rejection log for valid context.
 - Distinguish resolver exceptions from missing values. Let unexpected resolver failures reach framework error handling without invoking downstream application work.
 - A logger exception must not prevent the middleware from returning its required missing-context response.
-- Provide a default destination that needs no declaration and receives every context entry declaring an outbound header name.
-- Let callers declare named destinations, each explicitly listing the context entries it may receive. Restrict destination and entry names in public types.
-- Reject configuration if a named destination lists an unknown entry or one without an outbound header name.
-- Validate outbound header names using Node HTTP rules. Reject configuration assigning two distinct entries to the same case-insensitive header name.
-- Expose `context.getHeaders(destination?)`. Without a destination, return the default destination’s currently defined values; with one, return only that destination’s listed, currently defined values. Use the configured header names.
+- Let callers declare named destinations, each listing the context entries it may receive. Restrict destination and entry names in public types.
+- Treat a destination named `default` as the default destination, used when headers are requested without a destination name. Allow omitting the name in public types only when `default` is declared.
+- Reject configuration if a destination lists an unknown entry or one without an outbound header name.
+- Validate outbound header names using Node HTTP rules. Reject mappings assigning two distinct entries to the same case-insensitive header name within one destination.
+- Expose `context.getHeaders(destination?)` returning only that destination’s listed, currently defined values under their configured header names. An omitted destination means `default`.
 - Validate outbound values using Node HTTP rules. If a value is invalid, throw `TypeError` identifying the entry and header without including the raw value; do not return a partial result.
-- Return an empty header object for the default or a declared destination with no applicable values, or when called outside context. Throw `Unknown destination: <name>` for an undeclared destination.
+- Return an empty header object for a declared destination with no applicable values or when called outside context. Throw `Unknown destination: <name>` for an undeclared destination.
 - Return a fresh header object on each call, preserving valid names as ordinary own properties. Mutating it must not change context or subsequent results.
 - Generate headers without making network requests. Callers apply returned headers to their own outgoing requests.
 - `listen(app)` starts an owned Node HTTP server using the supplied request listener. An omitted host uses Node’s default binding behavior.

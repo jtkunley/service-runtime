@@ -2,6 +2,8 @@ export const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 65_000;
 export const DEFAULT_FORCE_EXIT_MS = 30_000;
 export const DEFAULT_READINESS_PATH = "/readiness";
 export const DEFAULT_LIVENESS_PATH = "/liveness";
+/** The destination `context.getHeaders()` uses when called without a name. */
+export const DEFAULT_DESTINATION = "default";
 export const DEFAULT_SHUTDOWN_SIGNALS: readonly NodeJS.Signals[] = Object.freeze([
   "SIGTERM",
   "SIGINT",
